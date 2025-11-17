@@ -1,0 +1,30 @@
+[package]
+name = "frost"
+version = "0.1.0"
+edition = "2024"
+description = "Command-line helper for managing FROST participants"
+authors = ["Blockchain Commons"]
+license = "BSD-2-Clause-Patent"
+repository = "https://github.com/BlockchainCommons/bc-rust"
+readme = "README.md"
+keywords = ["cli", "frost", "xid"]
+categories = ["cryptography", "command-line-utilities"]
+default-run = "frost"
+
+[[bin]]
+name = "frost"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "^1.0.0"
+clap = { version = "^4.4.3", features = ["derive"] }
+bc-components = "^0.28.0"
+bc-envelope = { version = "^0.37.0", features = ["multithreaded"] }
+bc-xid = "^0.16.0"
+serde = { version = "^1.0.0", features = ["derive"] }
+serde_json = "^1.0.135"
+
+[dev-dependencies]
+assert_cmd = "^2.0.12"
+predicates = "^3.1.0"
+tempfile = "^3.10.1"
