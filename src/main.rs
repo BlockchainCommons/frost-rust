@@ -7,6 +7,7 @@ mod cmd;
 mod participants;
 
 fn main() -> Result<()> {
+    bc_envelope::register_tags();
     let cli = cmd::Cli::parse();
     cli.exec()
 }

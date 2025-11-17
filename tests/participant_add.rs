@@ -6,25 +6,23 @@ use tempfile::TempDir;
 
 #[rustfmt::skip]
 const ALICE_REGISTRY_JSON: &str = r#"{
-    "participants": [
-        {
-            "document": "ur:xid/tpsplftpsplftpsotanshdhdcxwmkbiywnmkwdlprdjliowtdkprkpbszodnlychyklapdjzrohnwpwecefglolsbsoyaylstpsotansgylftanshfhdcxswkeatmoclaehlpezsprtkntgrparfihgosofmfnlrgltndysabkwlckykimemottansgrhdcxtnhluevohylpdadednfmrsdkcfvovdsfaaadpecllftytbhgmylapkbarsfhdthsoycsfncsfgoycscstpsoihfpjziniaihoyaxtpsotansghhdfzkizesfchbgmylycxcesplsatmelfctwdplbeidjkmklehetntyidasgevachftiyotielsidkomoynskpkknpfuojobyrkbncektdsiateluetctyklrgrpshdhfadfzwkesroaa",
-            "pet_name": "Alice",
-            "xid": "eb7e66f198ea85ba6f67f024b2750ffb2b8117f580a86cb860eced1c4688830f"
+    "participants": {
+        "eb7e66f198ea85ba6f67f024b2750ffb2b8117f580a86cb860eced1c4688830f": {
+            "public_keys": "ur:crypto-pubkeys/lftanshfhdcxswkeatmoclaehlpezsprtkntgrparfihgosofmfnlrgltndysabkwlckykimemottansgrhdcxtnhluevohylpdadednfmrsdkcfvovdsfaaadpecllftytbhgmylapkbarsfhdthskklysacn",
+            "pet_name": "Alice"
         }
-    ]
+    }
 }
 "#;
 
 #[rustfmt::skip]
 const SHARED_REGISTRY_JSON: &str = r#"{
-    "participants": [
-        {
-            "document": "ur:xid/tpsplftpsplftpsotanshdhdcxwmkbiywnmkwdlprdjliowtdkprkpbszodnlychyklapdjzrohnwpwecefglolsbsoyaylstpsotansgylftanshfhdcxswkeatmoclaehlpezsprtkntgrparfihgosofmfnlrgltndysabkwlckykimemottansgrhdcxtnhluevohylpdadednfmrsdkcfvovdsfaaadpecllftytbhgmylapkbarsfhdthsoycsfncsfgoycscstpsoihfpjziniaihoyaxtpsotansghhdfzkizesfchbgmylycxcesplsatmelfctwdplbeidjkmklehetntyidasgevachftiyotielsidkomoynskpkknpfuojobyrkbncektdsiateluetctyklrgrpshdhfadfzwkesroaa",
-            "pet_name": "shared",
-            "xid": "eb7e66f198ea85ba6f67f024b2750ffb2b8117f580a86cb860eced1c4688830f"
+    "participants": {
+        "eb7e66f198ea85ba6f67f024b2750ffb2b8117f580a86cb860eced1c4688830f": {
+            "public_keys": "ur:crypto-pubkeys/lftanshfhdcxswkeatmoclaehlpezsprtkntgrparfihgosofmfnlrgltndysabkwlckykimemottansgrhdcxtnhluevohylpdadednfmrsdkcfvovdsfaaadpecllftytbhgmylapkbarsfhdthskklysacn",
+            "pet_name": "shared"
         }
-    ]
+    }
 }
 "#;
 

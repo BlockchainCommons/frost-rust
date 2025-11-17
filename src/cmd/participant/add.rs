@@ -27,12 +27,12 @@ impl CommandArgs {
         )
         .context("XID document must be signed by its inception key")?;
 
-        let participant =
-            ParticipantRecord::from_sources(&document, &envelope, pet_name)?;
+        let (xid, participant) =
+            ParticipantRecord::from_document(&document, pet_name)?;
         let path = participants_file_path()?;
         let mut registry = ParticipantsFile::load(&path)?;
 
-        match registry.add(participant)? {
+        match registry.add(xid, participant)? {
             AddOutcome::AlreadyPresent => {
                 println!("Participant already recorded");
             }
