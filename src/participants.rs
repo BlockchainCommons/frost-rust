@@ -19,17 +19,6 @@ pub struct ParticipantRecord {
 }
 
 impl ParticipantRecord {
-    #[allow(dead_code)]
-    pub fn from_document(
-        document: XIDDocument,
-        xid_document_ur: impl Into<String>,
-        pet_name: Option<String>,
-    ) -> Result<Self> {
-        let raw: String = xid_document_ur.into();
-        let sanitized = sanitize_xid_ur(&raw)?;
-        Self::build_from_parts(document, sanitized, pet_name)
-    }
-
     pub fn from_signed_xid_ur(
         xid_document_ur: impl Into<String>,
         pet_name: Option<String>,
