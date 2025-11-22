@@ -25,11 +25,11 @@ impl CommandArgs {
 
         match registry.set_owner(owner)? {
             OwnerOutcome::AlreadyPresent => {
-                println!("Owner already recorded");
+                eprintln!("Owner already recorded");
             }
             OwnerOutcome::Inserted => {
                 registry.save(&path)?;
-                println!("Owner stored in {}", path.display());
+                // println!("Owner stored in {}", path.display());
             }
         }
 

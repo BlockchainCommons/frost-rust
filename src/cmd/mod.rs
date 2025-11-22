@@ -9,6 +9,10 @@ pub mod owner;
 pub mod dkg;
 #[doc(hidden)]
 pub mod registry;
+#[doc(hidden)]
+pub mod storage;
+#[doc(hidden)]
+pub mod check;
 
 /// FROST command-line interface definition.
 #[derive(Debug, Parser)]
@@ -26,6 +30,8 @@ enum Commands {
     Participant(participant::CommandArgs),
     /// Manage FROST registry owner
     Owner(owner::CommandArgs),
+    /// Check Hubert storage backend availability
+    Check(check::CommandArgs),
 }
 
 impl Cli {
@@ -33,6 +39,7 @@ impl Cli {
         match self.command {
             Commands::Participant(args) => args.exec(),
             Commands::Owner(args) => args.exec(),
+            Commands::Check(args) => args.exec(),
         }
     }
 }
