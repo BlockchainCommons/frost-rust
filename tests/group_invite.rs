@@ -9,7 +9,7 @@ use bc_xid::{
     XIDDocument, XIDGeneratorOptions, XIDGenesisMarkOptions,
     XIDInceptionKeyOptions, XIDPrivateKeyOptions, XIDSigningOptions,
 };
-use frost::{DkgGroupInvite, DkgInvitation};
+use frost::{DkgGroupInvite, DkgInvitation, DkgInvitationResult};
 use gstp::SealedRequestBehavior;
 use indoc::indoc;
 use provenance_mark::ProvenanceMarkResolution;
@@ -185,13 +185,80 @@ fn test_dkg_group_invite() {
     )
     .unwrap();
 
-    assert_eq!(alice_invite.xid(), alice.xid());
+    assert_eq!(alice_invite.sender().xid(), coordinator.xid());
     assert_eq!(alice_invite.response_arid(), alice_response_arid);
     assert_eq!(alice_invite.valid_until(), expiry);
-    assert_eq!(alice_invite.sender().xid(), coordinator.xid());
     assert_eq!(alice_invite.request_id(), request_id);
     assert!(alice_invite.peer_continuation().is_some());
     assert_eq!(alice_invite.min_signers(), min_signers);
     assert_eq!(alice_invite.charter(), charter);
     assert_eq!(alice_invite.session_id(), session_id);
+
+    let success_response =
+        alice_invite.to_response(DkgInvitationResult::Accepted, &alice);
+    let success_envelope =
+        success_response.to_envelope(None, None, None).unwrap();
+
+    #[rustfmt::skip]
+    let expected_success_format = (indoc! {r#"
+        response(ARID(bbc88f5e)) [
+            'recipientContinuation': ENCRYPTED [
+                'hasRecipient': SealedMessage
+            ]
+            'result': 'OK'
+            'sender': XID(7c30cafe) [
+                'key': PublicKeys(b8164d99, SigningPublicKey(7c30cafe, SchnorrPublicKey(448e2868)), EncapsulationPublicKey(e472f495, X25519PublicKey(e472f495))) [
+                    'allow': 'All'
+                ]
+                'provenance': ProvenanceMark(59357d99)
+            ]
+        ]
+    "#}).trim();
+    assert_actual_expected!(
+        success_envelope.format(),
+        expected_success_format
+    );
+
+    let decline_response = alice_invite.to_response(
+        DkgInvitationResult::Declined("Busy".to_string()),
+        &alice,
+    );
+    let decline_envelope =
+        decline_response.to_envelope(None, None, None).unwrap();
+
+    #[rustfmt::skip]
+    let expected_decline_format = (indoc! {r#"
+        response(ARID(bbc88f5e)) [
+            'error': "Busy"
+            'recipientContinuation': ENCRYPTED [
+                'hasRecipient': SealedMessage
+            ]
+            'sender': XID(7c30cafe) [
+                'key': PublicKeys(b8164d99, SigningPublicKey(7c30cafe, SchnorrPublicKey(448e2868)), EncapsulationPublicKey(e472f495, X25519PublicKey(e472f495))) [
+                    'allow': 'All'
+                ]
+                'provenance': ProvenanceMark(59357d99)
+            ]
+        ]
+    "#}).trim();
+    assert_actual_expected!(
+        decline_envelope.format(),
+        expected_decline_format
+    );
+
+    let success_encrypted = alice_invite
+        .to_envelope(DkgInvitationResult::Accepted, &alice)
+        .unwrap();
+    let decline_encrypted = alice_invite
+        .to_envelope(DkgInvitationResult::Declined("Busy".to_string()), &alice)
+        .unwrap();
+
+    #[rustfmt::skip]
+    let expected_encrypted_format = (indoc! {r#"
+        ENCRYPTED [
+            'hasRecipient': SealedMessage
+        ]
+    "#}).trim();
+    assert_actual_expected!(success_encrypted.format(), expected_encrypted_format);
+    assert_actual_expected!(decline_encrypted.format(), expected_encrypted_format);
 }

@@ -3,7 +3,10 @@ use anyhow::Result;
 use bc_components::{ARID, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_xid::{XIDDocument, XIDVerifySignature};
-use gstp::{SealedRequest, SealedRequestBehavior};
+use gstp::{
+    SealedRequest, SealedRequestBehavior, SealedResponse,
+    SealedResponseBehavior,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DkGProposedParticipant {
@@ -189,7 +192,6 @@ pub enum DkgInvitationResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DkgInvitation {
-    xid: XID,               // XID of the participant
     response_arid: ARID,    // Hubert ARID at which to post the response
     valid_until: Date,      // Expiration date of the invite
     sender: XIDDocument,    // Coordinator who sent the invite
@@ -201,8 +203,6 @@ pub struct DkgInvitation {
 }
 
 impl DkgInvitation {
-    pub fn xid(&self) -> XID { self.xid }
-
     pub fn response_arid(&self) -> ARID { self.response_arid }
 
     pub fn valid_until(&self) -> Date { self.valid_until }
@@ -220,6 +220,47 @@ impl DkgInvitation {
     pub fn charter(&self) -> &str { &self.charter }
 
     pub fn session_id(&self) -> ARID { self.session_id }
+
+    /// Build a GSTP response for this invitation result.
+    pub fn to_response(
+        &self,
+        response: DkgInvitationResult,
+        recipient: &XIDDocument,
+    ) -> SealedResponse {
+        let base = match response {
+            DkgInvitationResult::Accepted => {
+                SealedResponse::new_success(self.request_id, recipient.clone())
+            }
+            DkgInvitationResult::Declined(reason) => {
+                SealedResponse::new_failure(
+                    self.request_id,
+                    recipient.clone(),
+                )
+                .with_error(reason)
+            }
+        };
+
+        base.with_peer_continuation(self.peer_continuation())
+    }
+
+    /// Create a signed/encrypted GSTP envelope containing the response for the
+    /// coordinator.
+    pub fn to_envelope(
+        &self,
+        response: DkgInvitationResult,
+        recipient: &XIDDocument,
+    ) -> Result<Envelope> {
+        let response = self.to_response(response, recipient);
+        let signer_private_keys = recipient.inception_private_keys().ok_or_else(
+            || anyhow::anyhow!("Recipient XID document has no signing keys"),
+        )?;
+        let recipients = [self.sender()];
+        Ok(response.to_envelope_for_recipients(
+            Some(self.valid_until()),
+            Some(signer_private_keys),
+            &recipients.iter().collect::<Vec<_>>(),
+        )?)
+    }
 
     /// Reverses `DkgGroupInvite::to_envelope` for a single participant.
     ///
@@ -302,7 +343,6 @@ impl DkgInvitation {
                 response_arid_envelope.extract_subject::<ARID>()?;
 
             return Ok(Self {
-                xid: recipient_xid,
                 response_arid,
                 valid_until,
                 sender: sealed_request.sender().clone(),

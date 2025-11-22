@@ -21,6 +21,7 @@ clap = { version = "^4.4.3", features = ["derive"] }
 bc-components = "^0.28.0"
 bc-envelope = { version = "^0.37.0", features = ["multithreaded"] }
 bc-xid = "^0.16.0"
+provenance-mark = "0.16.0"
 serde = { version = "^1.0.0", features = ["derive"] }
 serde_json = "^1.0.135"
 gstp = "^0.11.0"
@@ -31,5 +32,4 @@ predicates = "^3.1.0"
 tempfile = "^3.10.1"
 indoc = "^2.0.0"
 bc-rand = "^0.4.2"
-provenance-mark = "0.16.0"
 similar-asserts = "1.7.0"
