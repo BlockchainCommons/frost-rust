@@ -64,6 +64,8 @@ impl Registry {
         }
     }
 
+    pub fn owner(&self) -> Option<&OwnerRecord> { self.owner.as_ref() }
+
     pub fn add_participant(
         &mut self,
         xid: XID,
@@ -105,6 +107,19 @@ impl Registry {
                 Ok(AddOutcome::Inserted)
             }
         }
+    }
+
+    pub fn participant(&self, xid: &XID) -> Option<&ParticipantRecord> {
+        self.participants.get(xid)
+    }
+
+    pub fn participant_by_pet_name(
+        &self,
+        pet_name: &str,
+    ) -> Option<(&XID, &ParticipantRecord)> {
+        self.participants
+            .iter()
+            .find(|(_, record)| record.pet_name() == Some(pet_name))
     }
 }
 

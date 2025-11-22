@@ -467,6 +467,31 @@ cat "${registry_var}"
                 ),
             )
 
+        run_step(
+            shell,
+            "Showing Alice's DKG invite (request envelope)",
+            f"""
+ALICE_INVITE=$(frost dkg invite show --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+echo "${{ALICE_INVITE}}" | envelope format
+""",
+            commentary=(
+                "Create a 2-of-3 DKG invite for Bob, Carol, and Dan (from Alice's registry) "
+                "and format the request envelope to inspect its structure."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Showing Alice's sealed DKG invite",
+            f"""
+ALICE_INVITE_SEALED=$(frost dkg invite show --registry {qp(REGISTRIES["alice"])} --sealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+echo "${{ALICE_INVITE_SEALED}}" | envelope format
+""",
+            commentary=(
+                "Seal the 2-of-3 invite for Bob, Carol, and Dan and format the sealed envelope "
+                "to view the encrypted recipient entries."
+            ),
+        )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 

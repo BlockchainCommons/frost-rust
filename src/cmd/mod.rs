@@ -10,6 +10,8 @@ pub mod dkg;
 #[doc(hidden)]
 pub mod registry;
 #[doc(hidden)]
+pub mod dkg_cli;
+#[doc(hidden)]
 pub mod storage;
 #[doc(hidden)]
 pub mod check;
@@ -32,6 +34,8 @@ enum Commands {
     Owner(owner::CommandArgs),
     /// Check Hubert storage backend availability
     Check(check::CommandArgs),
+    /// Distributed key generation operations
+    Dkg(dkg_cli::CommandArgs),
 }
 
 impl Cli {
@@ -40,6 +44,7 @@ impl Cli {
             Commands::Participant(args) => args.exec(),
             Commands::Owner(args) => args.exec(),
             Commands::Check(args) => args.exec(),
+            Commands::Dkg(args) => args.exec(),
         }
     }
 }
