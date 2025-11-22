@@ -182,4 +182,6 @@ fn test_dkg_group_invite() {
     assert_eq!(alice_invite.xid(), alice.xid());
     assert_eq!(alice_invite.response_arid(), alice_response_arid);
     assert_eq!(alice_invite.valid_until(), expiry);
+    assert_eq!(alice_invite.sender().xid(), coordinator.xid());
+    assert_eq!(alice_invite.request_id(), request_id);
 }

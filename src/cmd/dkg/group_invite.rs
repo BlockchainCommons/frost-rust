@@ -165,6 +165,8 @@ pub struct DkgInvitation {
     xid: XID,               // XID of the participant
     response_arid: ARID,    // Hubert ARID at which to post the response
     valid_until: Date,      // Expiration date of the invite
+    sender: XIDDocument,    // Coordinator who sent the invite
+    request_id: ARID,       // The GSTP request ID for correlated responses
 }
 
 impl DkgInvitation {
@@ -173,6 +175,10 @@ impl DkgInvitation {
     pub fn response_arid(&self) -> ARID { self.response_arid }
 
     pub fn valid_until(&self) -> Date { self.valid_until }
+
+    pub fn sender(&self) -> XIDDocument { self.sender.clone() }
+
+    pub fn request_id(&self) -> ARID { self.request_id }
 
     /// Reverses `DkgGroupInvite::to_envelope` for a single participant.
     ///
@@ -241,7 +247,13 @@ impl DkgInvitation {
             let response_arid =
                 response_arid_envelope.extract_subject::<ARID>()?;
 
-            return Ok(Self { xid: recipient_xid, response_arid, valid_until });
+            return Ok(Self {
+                xid: recipient_xid,
+                response_arid,
+                valid_until,
+                sender: sealed_request.sender().clone(),
+                request_id: sealed_request.request().id(),
+            });
         }
 
         anyhow::bail!("Recipient not found in invite");
