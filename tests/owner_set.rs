@@ -3,7 +3,7 @@ mod common;
 use std::fs;
 
 use common::{fixture, registry_file, run_frost};
-use frost::participants::OwnerRecord;
+use frost::registry::OwnerRecord;
 use predicates::prelude::*;
 use serde_json::json;
 use tempfile::TempDir;

@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 pub mod cmd;
-pub mod participants;
+pub mod registry;
 
 pub use cmd::dkg::{
     DkGProposedParticipant, DkgGroupInvite, DkgInvitation,

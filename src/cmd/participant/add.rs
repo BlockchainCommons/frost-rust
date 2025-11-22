@@ -3,7 +3,7 @@ use clap::Parser;
 
 use crate::{
     cmd::registry::participants_file_path,
-    participants::{AddOutcome, ParticipantRecord, Registry},
+    registry::{AddOutcome, ParticipantRecord, Registry},
 };
 
 #[derive(Debug, Parser)]
