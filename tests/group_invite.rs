@@ -49,6 +49,8 @@ fn test_dkg_group_invite() {
     let alice = make_xid_document(&mut rng, date);
     let bob = make_xid_document(&mut rng, date);
     let carol = make_xid_document(&mut rng, date);
+    let min_signers = 2;
+    let charter = "Test charter".to_string();
 
     let alice_ur = alice
         .clone()
@@ -94,6 +96,8 @@ fn test_dkg_group_invite() {
         session_id,
         date,
         expiry,
+        min_signers,
+        charter.clone(),
         participants,
         response_arids,
     )
@@ -103,6 +107,8 @@ fn test_dkg_group_invite() {
     let expected_format = (indoc! {r#"
         request(ARID(bbc88f5e)) [
             'body': «"dkgGroupInvite"» [
+                ❰"charter"❱: "Test charter"
+                ❰"minSigners"❱: 2
                 ❰"participant"❱: {
                     {
                         XID(0025f285) [
@@ -184,4 +190,8 @@ fn test_dkg_group_invite() {
     assert_eq!(alice_invite.valid_until(), expiry);
     assert_eq!(alice_invite.sender().xid(), coordinator.xid());
     assert_eq!(alice_invite.request_id(), request_id);
+    assert!(alice_invite.peer_continuation().is_some());
+    assert_eq!(alice_invite.min_signers(), min_signers);
+    assert_eq!(alice_invite.charter(), charter);
+    assert_eq!(alice_invite.session_id(), session_id);
 }

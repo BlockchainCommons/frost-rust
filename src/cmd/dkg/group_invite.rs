@@ -53,17 +53,24 @@ pub struct DkgGroupInvite {
     date: Date,
     // Expiration date of the invite
     valid_until: Date,
+    // Minimum signers required for the DKG session
+    min_signers: usize,
+    // Charter statement for the DKG session (may be empty)
+    charter: String,
     // Identifies participants and their indexes
     ordered_participants: Vec<DkGProposedParticipant>,
 }
 
 impl DkgGroupInvite {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         request_id: ARID,
         sender: XIDDocument,
         session_id: ARID,
         date: Date,
         valid_until: Date,
+        min_signers: usize,
+        charter: String,
         participants: Vec<String>,
         response_arids: Vec<ARID>,
     ) -> Result<Self> {
@@ -74,6 +81,9 @@ impl DkgGroupInvite {
                 response_arids.len()
             );
         }
+        if min_signers < 2 {
+            anyhow::bail!("min_signers must be at least 2");
+        }
         let mut ordered_participants = participants
             .into_iter()
             .zip(response_arids.into_iter())
@@ -81,6 +91,9 @@ impl DkgGroupInvite {
                 DkGProposedParticipant::new(ur_string, response_arid)
             })
             .collect::<Result<Vec<DkGProposedParticipant>>>()?;
+        if min_signers > ordered_participants.len() {
+            anyhow::bail!("min_signers cannot exceed number of participants");
+        }
         ordered_participants.sort_by_key(|p| p.xid());
         Ok(Self {
             request_id,
@@ -88,6 +101,8 @@ impl DkgGroupInvite {
             session_id,
             date,
             valid_until,
+            min_signers,
+            charter,
             ordered_participants,
         })
     }
@@ -102,6 +117,10 @@ impl DkgGroupInvite {
 
     pub fn valid_until(&self) -> Date { self.valid_until }
 
+    pub fn min_signers(&self) -> usize { self.min_signers }
+
+    pub fn charter(&self) -> &str { &self.charter }
+
     pub fn participants(&self) -> &Vec<DkGProposedParticipant> {
         &self.ordered_participants
     }
@@ -113,6 +132,8 @@ impl DkgGroupInvite {
             self.sender(),
         )
         .with_parameter("session", self.session_id())
+        .with_parameter("minSigners", self.min_signers as u64)
+        .with_parameter("charter", self.charter.clone())
         .with_date(self.date())
         .with_parameter("validUntil", self.valid_until());
         for participant in self.participants() {
@@ -167,6 +188,10 @@ pub struct DkgInvitation {
     valid_until: Date,      // Expiration date of the invite
     sender: XIDDocument,    // Coordinator who sent the invite
     request_id: ARID,       // The GSTP request ID for correlated responses
+    peer_continuation: Option<Envelope>, // Continuation (if any) to return to sender
+    min_signers: usize,     // Minimum signers required
+    charter: String,        // Charter text (may be empty)
+    session_id: ARID,       // Identifier for the DKG session
 }
 
 impl DkgInvitation {
@@ -179,6 +204,16 @@ impl DkgInvitation {
     pub fn sender(&self) -> XIDDocument { self.sender.clone() }
 
     pub fn request_id(&self) -> ARID { self.request_id }
+
+    pub fn peer_continuation(&self) -> Option<&Envelope> {
+        self.peer_continuation.as_ref()
+    }
+
+    pub fn min_signers(&self) -> usize { self.min_signers }
+
+    pub fn charter(&self) -> &str { &self.charter }
+
+    pub fn session_id(&self) -> ARID { self.session_id }
 
     /// Reverses `DkgGroupInvite::to_envelope` for a single participant.
     ///
@@ -225,10 +260,23 @@ impl DkgInvitation {
         }
 
         let recipient_xid = recipient.xid();
+        let min_signers: usize = sealed_request
+            .request()
+            .extract_object_for_parameter("minSigners")?;
+        let charter: String =
+            sealed_request.request().extract_object_for_parameter("charter")?;
+        let session_id: ARID =
+            sealed_request.request().extract_object_for_parameter("session")?;
+        let participant_objects =
+            sealed_request.request().objects_for_parameter("participant");
+        if min_signers < 2 {
+            anyhow::bail!("min_signers must be at least 2");
+        }
+        if min_signers > participant_objects.len() {
+            anyhow::bail!("min_signers exceeds participant count");
+        }
 
-        for participant in
-            sealed_request.request().objects_for_parameter("participant")
-        {
+        for participant in participant_objects {
             let xid_doc_envelope = participant.try_unwrap()?;
             let xid_document = XIDDocument::from_envelope(
                 &xid_doc_envelope,
@@ -253,6 +301,10 @@ impl DkgInvitation {
                 valid_until,
                 sender: sealed_request.sender().clone(),
                 request_id: sealed_request.request().id(),
+                peer_continuation: sealed_request.peer_continuation().cloned(),
+                min_signers,
+                charter,
+                session_id,
             });
         }
 
