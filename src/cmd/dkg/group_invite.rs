@@ -3,7 +3,7 @@ use anyhow::Result;
 use bc_components::{ARID, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_xid::{XIDDocument, XIDVerifySignature};
-use gstp::SealedRequest;
+use gstp::{SealedRequest, SealedRequestBehavior};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DkGProposedParticipant {
@@ -168,6 +168,12 @@ pub struct DkgInvitation {
 }
 
 impl DkgInvitation {
+    pub fn xid(&self) -> XID { self.xid }
+
+    pub fn response_arid(&self) -> ARID { self.response_arid }
+
+    pub fn valid_until(&self) -> Date { self.valid_until }
+
     /// Reverses `DkgGroupInvite::to_envelope` for a single participant.
     ///
     /// - Verifies the envelope is properly encrypted to the recipient.
@@ -175,7 +181,69 @@ impl DkgInvitation {
     /// - Verifies the participant is included in the invite.
     /// - Decrypts the participant's response ARID.
     /// - Extracts the `valid_until` date and ensures that it has not expired (> now).
-    pub fn from_invite(invite: Envelope, now: Date, expected_sender: &XIDDocument, recipient: &XIDDocument) -> Result<Self> {
-        todo!();
+    pub fn from_invite(
+        invite: Envelope,
+        now: Date,
+        expected_sender: &XIDDocument,
+        recipient: &XIDDocument,
+    ) -> Result<Self> {
+        let recipient_private_keys =
+            recipient.inception_private_keys().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Recipient XID document has no inception private keys"
+                )
+            })?;
+
+        let sealed_request = SealedRequest::try_from_envelope(
+            &invite,
+            None,
+            Some(now),
+            recipient_private_keys,
+        )?;
+
+        if sealed_request.sender().xid() != expected_sender.xid() {
+            anyhow::bail!("Invite sender does not match expected sender");
+        }
+
+        if sealed_request.request().function()
+            != &Function::from("dkgGroupInvite")
+        {
+            anyhow::bail!("Unexpected invite function");
+        }
+
+        let valid_until: Date = sealed_request
+            .request()
+            .extract_object_for_parameter("validUntil")?;
+        if valid_until <= now {
+            anyhow::bail!("Invitation expired");
+        }
+
+        let recipient_xid = recipient.xid();
+
+        for participant in
+            sealed_request.request().objects_for_parameter("participant")
+        {
+            let xid_doc_envelope = participant.try_unwrap()?;
+            let xid_document = XIDDocument::from_envelope(
+                &xid_doc_envelope,
+                None,
+                XIDVerifySignature::Inception,
+            )?;
+
+            if xid_document.xid() != recipient_xid {
+                continue;
+            }
+
+            let encrypted_response_arid =
+                participant.object_for_predicate("response_arid")?;
+            let response_arid_envelope = encrypted_response_arid
+                .decrypt_to_recipient(recipient_private_keys)?;
+            let response_arid =
+                response_arid_envelope.extract_subject::<ARID>()?;
+
+            return Ok(Self { xid: recipient_xid, response_arid, valid_until });
+        }
+
+        anyhow::bail!("Recipient not found in invite");
     }
 }

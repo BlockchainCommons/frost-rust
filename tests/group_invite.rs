@@ -2,14 +2,14 @@ mod common;
 
 use std::time::Duration;
 
-use bc_components::{ARID, PrivateKeyBase};
+use bc_components::{ARID, PrivateKeyBase, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_rand::{RandomNumberGenerator, make_fake_random_number_generator};
 use bc_xid::{
     XIDDocument, XIDGeneratorOptions, XIDGenesisMarkOptions,
     XIDInceptionKeyOptions, XIDPrivateKeyOptions, XIDSigningOptions,
 };
-use frost::DkgGroupInvite;
+use frost::{DkgGroupInvite, DkgInvitation};
 use gstp::SealedRequestBehavior;
 use indoc::indoc;
 use provenance_mark::ProvenanceMarkResolution;
@@ -31,30 +31,6 @@ fn make_xid_document(
     )
 }
 
-fn make_xid_ur_string(
-    rng: &mut impl RandomNumberGenerator,
-    date: Date,
-) -> String {
-    let private_key_base = PrivateKeyBase::new_using(rng);
-
-    XIDDocument::new(
-        XIDInceptionKeyOptions::PrivateKeyBase(private_key_base),
-        XIDGenesisMarkOptions::Passphrase(
-            "password".to_string(),
-            Some(ProvenanceMarkResolution::Quartile),
-            Some(date),
-            None,
-        ),
-    )
-    .to_envelope(
-        XIDPrivateKeyOptions::default(),
-        XIDGeneratorOptions::default(),
-        XIDSigningOptions::Inception,
-    )
-    .unwrap()
-    .ur_string()
-}
-
 fn make_arid(rng: &mut impl RandomNumberGenerator) -> ARID {
     let bytes = rng.random_data(ARID::ARID_SIZE);
     ARID::from_data_ref(bytes).unwrap()
@@ -70,23 +46,51 @@ fn test_dkg_group_invite() {
 
     let coordinator = make_xid_document(&mut rng, date);
 
-    let alice = make_xid_ur_string(&mut rng, date);
-    let bob = make_xid_ur_string(&mut rng, date);
-    let carol = make_xid_ur_string(&mut rng, date);
+    let alice = make_xid_document(&mut rng, date);
+    let bob = make_xid_document(&mut rng, date);
+    let carol = make_xid_document(&mut rng, date);
 
-    let participants = vec![alice.clone(), bob.clone(), carol.clone()];
+    let alice_ur = alice
+        .clone()
+        .to_envelope(
+            XIDPrivateKeyOptions::default(),
+            XIDGeneratorOptions::default(),
+            XIDSigningOptions::Inception,
+        )
+        .unwrap()
+        .ur_string();
+    let bob_ur = bob
+        .clone()
+        .to_envelope(
+            XIDPrivateKeyOptions::default(),
+            XIDGeneratorOptions::default(),
+            XIDSigningOptions::Inception,
+        )
+        .unwrap()
+        .ur_string();
+    let carol_ur = carol
+        .clone()
+        .to_envelope(
+            XIDPrivateKeyOptions::default(),
+            XIDGeneratorOptions::default(),
+            XIDSigningOptions::Inception,
+        )
+        .unwrap()
+        .ur_string();
+
+    let participants = vec![alice_ur, bob_ur, carol_ur];
 
     let request_id = make_arid(&mut rng);
     let session_id = make_arid(&mut rng);
     let expiry = date + Duration::from_secs(7 * 24 * 60 * 60);
-    let response_arids = vec![
-        make_arid(&mut rng),
-        make_arid(&mut rng),
-        make_arid(&mut rng),
-    ];
+    let alice_response_arid = make_arid(&mut rng);
+    let bob_response_arid = make_arid(&mut rng);
+    let carol_response_arid = make_arid(&mut rng);
+    let response_arids =
+        vec![alice_response_arid, bob_response_arid, carol_response_arid];
     let invite = DkgGroupInvite::new(
         request_id,
-        coordinator,
+        coordinator.clone(),
         session_id,
         date,
         expiry,
@@ -167,5 +171,15 @@ fn test_dkg_group_invite() {
     "#}).trim();
     assert_actual_expected!(gstp_envelope.format(), expected_format);
 
-    // Decrypt and verify the individual participant envelopes here.
+    let alice_invite = DkgInvitation::from_invite(
+        gstp_envelope,
+        date,
+        &coordinator,
+        &alice,
+    )
+    .unwrap();
+
+    assert_eq!(alice_invite.xid(), alice.xid());
+    assert_eq!(alice_invite.response_arid(), alice_response_arid);
+    assert_eq!(alice_invite.valid_until(), expiry);
 }

@@ -4,7 +4,7 @@ use clap::Parser;
 pub mod cmd;
 pub mod participants;
 
-pub use cmd::dkg::{DkGProposedParticipant, DkgGroupInvite};
+pub use cmd::dkg::{DkGProposedParticipant, DkgGroupInvite, DkgInvitation};
 
 /// Entrypoint shared by the binary and integration tests.
 pub fn run() -> Result<()> {
