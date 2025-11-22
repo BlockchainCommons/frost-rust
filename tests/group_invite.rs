@@ -61,7 +61,7 @@ fn make_arid(rng: &mut impl RandomNumberGenerator) -> ARID {
 }
 
 #[test]
-fn test_dkg_group_invite_creation() {
+fn test_dkg_group_invite() {
     provenance_mark::register_tags();
 
     let mut rng = make_fake_random_number_generator();
@@ -155,6 +155,8 @@ fn test_dkg_group_invite_creation() {
     "#}).trim();
     assert_actual_expected!(invite.to_request().unwrap().request().to_envelope().format(), expected_format);
 
+    let gstp_envelope = invite.to_envelope().unwrap();
+
     #[rustfmt::skip]
     let expected_format = (indoc! {r#"
         ENCRYPTED [
@@ -163,5 +165,7 @@ fn test_dkg_group_invite_creation() {
             'hasRecipient': SealedMessage
         ]
     "#}).trim();
-    assert_actual_expected!(invite.to_envelope().unwrap().format(), expected_format);
+    assert_actual_expected!(gstp_envelope.format(), expected_format);
+
+    // Decrypt and verify the individual participant envelopes here.
 }

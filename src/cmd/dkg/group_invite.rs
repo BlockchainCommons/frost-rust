@@ -159,3 +159,23 @@ impl DkgGroupInvite {
         Ok(envelope)
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DkgInvitation {
+    xid: XID,               // XID of the participant
+    response_arid: ARID,    // Hubert ARID at which to post the response
+    valid_until: Date,      // Expiration date of the invite
+}
+
+impl DkgInvitation {
+    /// Reverses `DkgGroupInvite::to_envelope` for a single participant.
+    ///
+    /// - Verifies the envelope is properly encrypted to the recipient.
+    /// - Verifies the decrypted envelope is a valid DKG group invite from the expected sender.
+    /// - Verifies the participant is included in the invite.
+    /// - Decrypts the participant's response ARID.
+    /// - Extracts the `valid_until` date and ensures that it has not expired (> now).
+    pub fn from_invite(invite: Envelope, now: Date, expected_sender: &XIDDocument, recipient: &XIDDocument) -> Result<Self> {
+        todo!();
+    }
+}
