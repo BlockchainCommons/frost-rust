@@ -29,7 +29,7 @@ impl CommandArgs {
 
         match registry.add_participant(xid, participant)? {
             AddOutcome::AlreadyPresent => {
-                eprintln!("Participant already recorded");
+                println!("Participant already recorded");
             }
             AddOutcome::Inserted => {
                 registry.save(&path)?;

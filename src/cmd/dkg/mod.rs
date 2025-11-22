@@ -1,3 +1,5 @@
+mod proposed_participant;
+pub use proposed_participant::*;
 mod participant_status;
 pub use participant_status::*;
 mod participant_info;
