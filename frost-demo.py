@@ -518,7 +518,7 @@ echo "${{ALICE_INVITE_ARID}}"
             shell,
             "Viewing invite from Hubert as Bob",
             f"""
-frost dkg invite view --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}" Alice
+frost dkg invite view --info --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}" Alice
 """,
             commentary=(
                 "Retrieve the invite from Hubert using Bob's registry, "

@@ -176,13 +176,17 @@ pub struct InviteViewArgs {
     #[arg(value_name = "UR:ARID")]
     arid: String,
 
+    /// Optional pre-fetched invite envelope (ur:envelope); skips Hubert retrieval when present
+    #[arg(long = "envelope", value_name = "UR:ENVELOPE")]
+    envelope: Option<String>,
+
+    /// Show invite details (charter, min signers, coordinator, participants, reply ARID)
+    #[arg(long)]
+    info: bool,
+
     /// Expected sender of the invite (ur:xid or pet name in registry)
     #[arg(value_name = "SENDER")]
     sender: String,
-
-    /// Optional pre-fetched invite envelope (ur:envelope); skips Hubert retrieval when present
-    #[arg(value_name = "UR:ENVELOPE")]
-    envelope: Option<String>,
 }
 
 impl InviteViewArgs {
@@ -225,20 +229,17 @@ impl InviteViewArgs {
             let coordinator_name =
                 resolve_sender_name(&registry, &details.invitation.sender());
 
-            println!("Charter: {}", details.invitation.charter());
-            println!("Min signers: {}", details.invitation.min_signers());
-            if let Some(name) = coordinator_name {
-                println!("Coordinator: {}", name);
-            }
-            println!("Participants: {}", participant_names.join(", "));
-            println!(
-                "Reply ARID: {}",
-                details.invitation.response_arid().ur_string()
-            );
-            if self.envelope.is_none() {
+            println!("{}", details.invitation_envelope.ur_string());
+            if self.info {
+                println!("Charter: {}", details.invitation.charter());
+                println!("Min signers: {}", details.invitation.min_signers());
+                if let Some(name) = coordinator_name {
+                    println!("Coordinator: {}", name);
+                }
+                println!("Participants: {}", participant_names.join(", "));
                 println!(
-                    "Invite Envelope: {}",
-                    details.invitation_envelope.ur_string()
+                    "Reply ARID: {}",
+                    details.invitation.response_arid().ur_string()
                 );
             }
 
@@ -510,6 +511,7 @@ fn resolve_sender_name(
         })
 }
 
+#[allow(dead_code)]
 fn parse_envelope_ur(input: &str) -> Result<Envelope> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

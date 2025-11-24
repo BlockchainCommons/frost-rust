@@ -15,7 +15,7 @@ fn owner_set_with_participant_add_persists_both() {
     let temp = TempDir::new().unwrap();
     let alice_participant = fixture("alice_signed_xid.txt");
     let owner_ur = make_owner_xid_ur();
-    OwnerRecord::from_signed_xid_ur(owner_ur.clone()).unwrap();
+    OwnerRecord::from_signed_xid_ur(owner_ur.clone(), None).unwrap();
 
     run_frost(temp.path(), &["registry", "owner", "set", &owner_ur])
         .assert()
@@ -71,7 +71,7 @@ fn make_owner_xid_ur() -> String {
     let roundtrip =
         bc_envelope::prelude::UR::from_ur_string(&ur_string).unwrap();
     assert_eq!(roundtrip.ur_type_str(), "xid");
-    OwnerRecord::from_signed_xid_ur(ur_string.clone()).unwrap();
+    OwnerRecord::from_signed_xid_ur(ur_string.clone(), None).unwrap();
     ur_string
 }
 
