@@ -1,14 +1,16 @@
 use std::{collections::HashSet, time::Duration};
 
 use anyhow::{Context, Result, bail};
-use bc_components::{ARID, XID};
+use bc_components::{ARID, XID, XIDProvider};
 use bc_envelope::prelude::*;
+use bc_ur::prelude::UR;
 use clap::{Parser, Subcommand};
-use gstp::SealedRequestBehavior;
+use gstp::{SealedRequest, SealedRequestBehavior};
+use bc_xid::{XIDDocument, XIDVerifySignature};
 use tokio::runtime::Runtime;
 
 use crate::{
-    DkgGroupInvite,
+    DkgGroupInvite, DkgInvitation,
     cmd::{
         registry::participants_file_path,
         storage::{StorageClient, StorageSelector},
@@ -52,6 +54,8 @@ enum InviteCommands {
     Show(InviteShowArgs),
     /// Create a sealed DKG invite and store it in Hubert
     Put(InvitePutArgs),
+    /// Retrieve and inspect a sealed DKG invite from Hubert
+    View(InviteViewArgs),
 }
 
 impl InviteArgs {
@@ -59,6 +63,7 @@ impl InviteArgs {
         match self.command {
             InviteCommands::Show(args) => args.exec(),
             InviteCommands::Put(args) => args.exec(),
+            InviteCommands::View(args) => args.exec(),
         }
     }
 }
@@ -148,6 +153,83 @@ impl InvitePutArgs {
             let client = StorageClient::from_selection(selection).await?;
             client.put(&arid, &envelope).await?;
             println!("{}", arid.ur_string());
+            Ok(())
+        })
+    }
+}
+
+#[derive(Debug, Parser)]
+#[doc(hidden)]
+pub struct InviteViewArgs {
+    #[command(flatten)]
+    storage: StorageSelector,
+
+    /// Optional registry path or filename override
+    #[arg(long = "registry", value_name = "PATH")]
+    registry: Option<String>,
+
+    /// Wait up to this many seconds for the invite to appear
+    #[arg(long = "timeout", value_name = "SECONDS")]
+    timeout: Option<u64>,
+
+    /// ARID for the sealed invite (ur:arid)
+    #[arg(value_name = "UR:ARID")]
+    arid: String,
+
+    /// Expected sender of the invite (ur:xid or pet name in registry)
+    #[arg(value_name = "SENDER")]
+    sender: String,
+}
+
+impl InviteViewArgs {
+    pub fn exec(self) -> Result<()> {
+        let selection = self.storage.resolve()?;
+        let registry_path = participants_file_path(self.registry.clone())?;
+        let registry =
+            Registry::load(&registry_path).with_context(|| {
+                format!("Failed to load registry at {}", registry_path.display())
+            })?;
+        let owner = registry
+            .owner()
+            .context("Registry owner with private keys is required")?
+            .xid_document()
+            .clone();
+        let expected_sender =
+            resolve_sender(&registry, self.sender.as_str())?;
+        let arid = parse_arid_ur(&self.arid)?;
+
+        let registry = registry;
+        let runtime = Runtime::new()?;
+        runtime.block_on(async move {
+            let client = StorageClient::from_selection(selection).await?;
+            let envelope = client
+                .get(&arid, self.timeout)
+                .await?
+                .context("Invite not found in Hubert storage")?;
+
+            let now = Date::now();
+            let details = decode_invite_details(
+                envelope,
+                now,
+                expected_sender,
+                &owner,
+            )?;
+
+            let participant_names =
+                participant_names_from_registry(
+                    &registry,
+                    &details.participants,
+                    &owner.xid(),
+                )?;
+
+            println!("Charter: {}", details.invitation.charter());
+            println!("Min signers: {}", details.invitation.min_signers());
+            println!("Participants: {}", participant_names.join(", "));
+            println!(
+                "Reply ARID: {}",
+                details.invitation.response_arid().ur_string()
+            );
+
             Ok(())
         })
     }
@@ -246,4 +328,165 @@ fn build_invite(
         participant_docs,
         response_arids,
     )
+}
+
+struct InviteDetails {
+    invitation: DkgInvitation,
+    participants: Vec<XIDDocument>,
+}
+
+fn decode_invite_details(
+    invite: Envelope,
+    now: Date,
+    expected_sender: XIDDocument,
+    recipient: &XIDDocument,
+) -> Result<InviteDetails> {
+    let recipient_private_keys =
+        recipient.inception_private_keys().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Recipient XID document has no inception private keys"
+            )
+        })?;
+
+    let sealed_request = SealedRequest::try_from_envelope(
+        &invite,
+        None,
+        Some(now),
+        recipient_private_keys,
+    )?;
+
+    if sealed_request.sender().xid() != expected_sender.xid() {
+        bail!("Invite sender does not match expected sender");
+    }
+    if sealed_request.request().function()
+        != &Function::from("dkgGroupInvite")
+    {
+        bail!("Unexpected invite function");
+    }
+
+    let valid_until: Date = sealed_request
+        .request()
+        .extract_object_for_parameter("validUntil")?;
+    if valid_until <= now {
+        bail!("Invitation expired");
+    }
+
+    let min_signers: usize = sealed_request
+        .request()
+        .extract_object_for_parameter("minSigners")?;
+    sealed_request
+        .request()
+        .extract_object_for_parameter::<String>("charter")?;
+    sealed_request
+        .request()
+        .extract_object_for_parameter::<ARID>("session")?;
+    let participant_objects =
+        sealed_request.request().objects_for_parameter("participant");
+    if min_signers < 2 {
+        bail!("min_signers must be at least 2");
+    }
+    if min_signers > participant_objects.len() {
+        bail!("min_signers exceeds participant count");
+    }
+
+    let mut participant_docs = Vec::new();
+    let mut response_arid: Option<ARID> = None;
+    for participant in participant_objects {
+        let xid_doc_envelope = participant.try_unwrap()?;
+        let xid_document = XIDDocument::from_envelope(
+            &xid_doc_envelope,
+            None,
+            XIDVerifySignature::Inception,
+        )?;
+        if xid_document.xid() == recipient.xid() {
+            let encrypted_response_arid =
+                participant.object_for_predicate("response_arid")?;
+            let response_arid_envelope = encrypted_response_arid
+                .decrypt_to_recipient(recipient_private_keys)?;
+            response_arid = Some(
+                response_arid_envelope.extract_subject::<ARID>()?,
+            );
+        }
+        participant_docs.push(xid_document);
+    }
+
+    let invitation = DkgInvitation::from_invite(
+        invite,
+        now,
+        &expected_sender,
+        recipient,
+    )?;
+
+    if response_arid.is_none() {
+        bail!("Invite does not include a response ARID for this recipient");
+    }
+
+    Ok(InviteDetails {
+        invitation,
+        participants: participant_docs,
+    })
+}
+
+fn participant_names_from_registry(
+    registry: &Registry,
+    participants: &[XIDDocument],
+    owner_xid: &XID,
+) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for document in participants {
+        let xid = document.xid();
+        if xid == *owner_xid {
+            names.push(xid.ur_string());
+        } else {
+            let record = registry.participant(&xid).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invite participant not found in registry: {}",
+                    xid.ur_string()
+                )
+            })?;
+            let name = record
+                .pet_name()
+                .map(|n| n.to_owned())
+                .unwrap_or_else(|| xid.ur_string());
+            names.push(name);
+        }
+    }
+    Ok(names)
+}
+
+fn resolve_sender(registry: &Registry, input: &str) -> Result<XIDDocument> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        bail!("Sender is required");
+    }
+
+    if let Ok(xid) = XID::from_ur_string(trimmed) {
+        let record = registry
+            .participant(&xid)
+            .with_context(|| format!("Sender with XID {} not found", xid.ur_string()))?;
+        Ok(record.xid_document().clone())
+    } else {
+        let (_, record) = registry
+            .participant_by_pet_name(trimmed)
+            .with_context(|| format!("Sender with pet name '{trimmed}' not found"))?;
+        Ok(record.xid_document().clone())
+    }
+}
+
+fn parse_arid_ur(input: &str) -> Result<ARID> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        bail!("Invite ARID is required");
+    }
+    let ur = UR::from_ur_string(trimmed)
+        .with_context(|| format!("Failed to parse ARID UR: {trimmed}"))?;
+    if ur.ur_type_str() != "arid" {
+        bail!("Expected a ur:arid, found ur:{}", ur.ur_type_str());
+    }
+    let cbor = ur.cbor();
+    ARID::try_from(cbor.clone()).or_else(|_| {
+        let bytes = CBOR::try_into_byte_string(cbor)
+            .context("Invalid ARID payload")?;
+        ARID::from_data_ref(bytes).context("Invalid ARID payload")
+    })
 }

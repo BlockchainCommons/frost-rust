@@ -123,6 +123,28 @@ impl StorageClient {
         }
         .map_err(|err| anyhow!(err))
     }
+
+    pub async fn get(
+        &self,
+        arid: &ARID,
+        timeout_seconds: Option<u64>,
+    ) -> Result<Option<Envelope>> {
+        match self {
+            StorageClient::Mainline(store) => {
+                store.get(arid, timeout_seconds, false).await
+            }
+            StorageClient::Ipfs(store) => {
+                store.get(arid, timeout_seconds, false).await
+            }
+            StorageClient::Hybrid(store) => {
+                store.get(arid, timeout_seconds, false).await
+            }
+            StorageClient::Server(store) => {
+                store.get(arid, timeout_seconds, false).await
+            }
+        }
+        .map_err(|err| anyhow!(err))
+    }
 }
 
 fn ensure_absent<T>(value: Option<T>, flag: &str, backend: &str) -> Result<()> {

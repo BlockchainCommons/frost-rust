@@ -9,6 +9,7 @@ frost registry participant add [--registry <PATH>] <XID_DOCUMENT> [<PET_NAME>]
 frost registry owner set [--registry <PATH>] <XID_DOCUMENT>
 frost dkg invite show [--registry <PATH>] [--sealed] [--min-signers <N>] [--charter <STRING>] <PARTICIPANT>...
 frost dkg invite put [--registry <PATH>] [--min-signers <N>] [--charter <STRING>] [--storage <BACKEND> --host <HOST> --port <PORT>] <PARTICIPANT>...
+frost dkg invite view [--registry <PATH>] [--timeout <SECONDS>] [--storage <BACKEND> --host <HOST> --port <PORT>] <UR:ARID> <SENDER>
 ```
 
 - `XID_DOCUMENT` must be a valid `ur:xid` string representing an `XIDDocument` that is signed by its inception key.
@@ -17,7 +18,7 @@ frost dkg invite put [--registry <PATH>] [--min-signers <N>] [--charter <STRING>
 
 By default commands store registry data in `registry.json` within the current working directory, creating the file if it does not exist. Re-running the same command with identical arguments is idempotent.
 
-The `registry owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys. The `dkg invite put` command seals a DKG invite for the selected participants and stores it in the chosen Hubert backend, printing the ARID (hex) on success so it can be shared out-of-band.
+The `registry owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys. The `dkg invite put` command seals a DKG invite for the selected participants and stores it in the chosen Hubert backend, printing the ARID (UR) on success so it can be shared out-of-band. The `dkg invite view` command retrieves, decrypts, and validates a sealed invite from Hubert for the registry owner and reports the reply ARID to use when responding.
 
 ## License
 
