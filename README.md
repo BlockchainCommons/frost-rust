@@ -5,8 +5,8 @@
 ## Usage
 
 ```
-frost participant add [--registry <PATH>] <XID_DOCUMENT> [<PET_NAME>]
-frost owner set [--registry <PATH>] <XID_DOCUMENT>
+frost registry participant add [--registry <PATH>] <XID_DOCUMENT> [<PET_NAME>]
+frost registry owner set [--registry <PATH>] <XID_DOCUMENT>
 ```
 
 - `XID_DOCUMENT` must be a valid `ur:xid` string representing an `XIDDocument` that is signed by its inception key.
@@ -15,7 +15,7 @@ frost owner set [--registry <PATH>] <XID_DOCUMENT>
 
 By default commands store registry data in `registry.json` within the current working directory, creating the file if it does not exist. Re-running the same command with identical arguments is idempotent.
 
-The `owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys.
+The `registry owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys.
 
 ## License
 

@@ -2,10 +2,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[doc(hidden)]
-pub mod participant;
-#[doc(hidden)]
-pub mod owner;
-#[doc(hidden)]
 pub mod dkg;
 #[doc(hidden)]
 pub mod registry;
@@ -28,10 +24,8 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 #[doc(hidden)]
 enum Commands {
-    /// Manage FROST participants
-    Participant(participant::CommandArgs),
-    /// Manage FROST registry owner
-    Owner(owner::CommandArgs),
+    /// Manage the FROST registry
+    Registry(registry::CommandArgs),
     /// Check Hubert storage backend availability
     Check(check::CommandArgs),
     /// Distributed key generation operations
@@ -41,8 +35,7 @@ enum Commands {
 impl Cli {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            Commands::Participant(args) => args.exec(),
-            Commands::Owner(args) => args.exec(),
+            Commands::Registry(args) => args.exec(),
             Commands::Check(args) => args.exec(),
             Commands::Dkg(args) => args.exec(),
         }

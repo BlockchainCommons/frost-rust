@@ -1,6 +1,37 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+use clap::{Parser, Subcommand};
+
+#[doc(hidden)]
+mod owner;
+#[doc(hidden)]
+mod participant;
+
+#[derive(Debug, Parser)]
+#[doc(hidden)]
+pub struct CommandArgs {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+#[doc(hidden)]
+enum Commands {
+    /// Manage registry participants
+    Participant(participant::CommandArgs),
+    /// Manage the registry owner
+    Owner(owner::CommandArgs),
+}
+
+impl CommandArgs {
+    pub fn exec(self) -> Result<()> {
+        match self.command {
+            Commands::Participant(args) => args.exec(),
+            Commands::Owner(args) => args.exec(),
+        }
+    }
+}
 
 /// Resolve the participants registry path, defaulting to `registry.json` in the
 /// current working directory.

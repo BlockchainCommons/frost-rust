@@ -448,12 +448,12 @@ echo "{upper}_SIGNED_DOC=${upper}_SIGNED_DOC"
                     continue
                 other_upper = other.upper()
                 participant_lines.append(
-                    f'frost participant add --registry "${registry_var}" "${other_upper}_SIGNED_DOC" {other.title()}'
+                    f'frost registry participant add --registry "${registry_var}" "${other_upper}_SIGNED_DOC" {other.title()}'
                 )
             participant_block = "\n".join(participant_lines)
             script = f"""
 {registry_var}={qp(registry_path)}
-frost owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
+frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
 {participant_block}
 cat "${registry_var}"
 """

@@ -31,3 +31,8 @@
 - Use the "expected text output rubric" approach for tests that compare text output.
 - Use the `assert_actual_expected!` macro for comparing actual and expected text output in tests.
 - Always use `indoc!` for multi-line expected text output in tests.
+
+## Important Notes
+
+- `frost-demo.py` generates `demo-log.md`. When you enhance the tool, consider enhancing the `frost-demo.py` script to reflect those changes in the demo log then regenerate `demo-log.md`.
+- Before you run `frost-demo.py`, install the latest build of the `frost` tool with `cargo install --path .`.

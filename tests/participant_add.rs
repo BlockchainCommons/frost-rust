@@ -39,7 +39,10 @@ fn participant_add_creates_registry_and_is_idempotent() {
     let temp = TempDir::new().unwrap();
     let alice = fixture("alice_signed_xid.txt");
 
-    run_frost(temp.path(), &["participant", "add", &alice, "Alice"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &alice, "Alice"],
+    )
         .assert()
         .success();
 
@@ -47,7 +50,10 @@ fn participant_add_creates_registry_and_is_idempotent() {
     let initial_state = fs::read_to_string(&path).unwrap();
     assert_registry_matches(&initial_state, ALICE_REGISTRY_JSON);
 
-    run_frost(temp.path(), &["participant", "add", &alice, "Alice"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &alice, "Alice"],
+    )
         .assert()
         .success()
         .stdout(predicate::str::contains("already recorded"));
@@ -65,6 +71,7 @@ fn participant_add_supports_custom_registry_filename_in_cwd() {
     run_frost(
         temp.path(),
         &[
+            "registry",
             "participant",
             "add",
             &alice,
@@ -89,6 +96,7 @@ fn participant_add_supports_directory_registry_path() {
     run_frost(
         temp.path(),
         &[
+            "registry",
             "participant",
             "add",
             &alice,
@@ -113,7 +121,15 @@ fn participant_add_supports_path_with_custom_filename() {
 
     run_frost(
         temp.path(),
-        &["participant", "add", &alice, "Alice", "--registry", arg],
+        &[
+            "registry",
+            "participant",
+            "add",
+            &alice,
+            "Alice",
+            "--registry",
+            arg,
+        ],
     )
     .assert()
     .success();
@@ -129,11 +145,17 @@ fn participant_add_conflicting_pet_name_fails() {
     let alice = fixture("alice_signed_xid.txt");
     let bob = fixture("bob_signed_xid.txt");
 
-    run_frost(temp.path(), &["participant", "add", &alice, "Alice"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &alice, "Alice"],
+    )
         .assert()
         .success();
 
-    run_frost(temp.path(), &["participant", "add", &bob, "Alice"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &bob, "Alice"],
+    )
         .assert()
         .failure()
         .stderr(predicate::str::contains("already used"));
@@ -148,11 +170,17 @@ fn participant_add_records_multiple_participants() {
     let alice = fixture("alice_signed_xid.txt");
     let bob = fixture("bob_signed_xid.txt");
 
-    run_frost(temp.path(), &["participant", "add", &alice, "Alice"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &alice, "Alice"],
+    )
         .assert()
         .success();
 
-    run_frost(temp.path(), &["participant", "add", &bob, "Bob"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &bob, "Bob"],
+    )
         .assert()
         .success();
 
@@ -165,7 +193,10 @@ fn participant_add_requires_signed_document() {
     let temp = TempDir::new().unwrap();
     let unsigned = fixture("bob_unsigned_xid.txt");
 
-    run_frost(temp.path(), &["participant", "add", &unsigned, "Unsigned"])
+    run_frost(
+        temp.path(),
+        &["registry", "participant", "add", &unsigned, "Unsigned"],
+    )
         .assert()
         .failure()
         .stderr(predicate::str::contains(

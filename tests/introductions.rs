@@ -21,14 +21,23 @@ fn introductions_create_four_registries() {
         let temp = TempDir::new().unwrap();
         let others = fixtures.others(user.name);
 
-        run_frost(temp.path(), &["owner", "set", &user.private_doc])
+        run_frost(
+            temp.path(),
+            &["registry", "owner", "set", &user.private_doc],
+        )
             .assert()
             .success();
 
         for other in &others {
             run_frost(
                 temp.path(),
-                &["participant", "add", &other.signed_doc, other.name],
+                &[
+                    "registry",
+                    "participant",
+                    "add",
+                    &other.signed_doc,
+                    other.name,
+                ],
             )
             .assert()
             .success();
