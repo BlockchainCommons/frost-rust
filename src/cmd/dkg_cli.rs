@@ -50,10 +50,10 @@ pub struct InviteArgs {
 #[derive(Debug, Subcommand)]
 #[doc(hidden)]
 enum InviteCommands {
-    /// Show a DKG invite for the given participants
-    Show(InviteShowArgs),
+    /// Compose a DKG invite for the given participants
+    Compose(InviteShowArgs),
     /// Create a sealed DKG invite and store it in Hubert
-    Put(InvitePutArgs),
+    Send(InvitePutArgs),
     /// Retrieve and inspect a sealed DKG invite from Hubert
     View(InviteViewArgs),
 }
@@ -61,8 +61,8 @@ enum InviteCommands {
 impl InviteArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            InviteCommands::Show(args) => args.exec(),
-            InviteCommands::Put(args) => args.exec(),
+            InviteCommands::Compose(args) => args.exec(),
+            InviteCommands::Send(args) => args.exec(),
             InviteCommands::View(args) => args.exec(),
         }
     }
@@ -184,6 +184,10 @@ pub struct InviteViewArgs {
     #[arg(long)]
     info: bool,
 
+    /// Suppress printing the invite envelope UR
+    #[arg(long)]
+    no_envelope: bool,
+
     /// Expected sender of the invite (ur:xid or pet name in registry)
     #[arg(value_name = "SENDER")]
     sender: String,
@@ -229,7 +233,9 @@ impl InviteViewArgs {
             let coordinator_name =
                 resolve_sender_name(&registry, &details.invitation.sender());
 
-            println!("{}", details.invitation_envelope.ur_string());
+            if !self.no_envelope {
+                println!("{}", details.invitation_envelope.ur_string());
+            }
             if self.info {
                 println!("Charter: {}", details.invitation.charter());
                 println!("Min signers: {}", details.invitation.min_signers());
@@ -450,11 +456,11 @@ fn participant_names_from_registry(
     let mut names = Vec::new();
     for document in participants {
         let xid = document.xid();
-        if xid == *owner_xid {
-            let name = owner_pet_name
+        let is_owner = xid == *owner_xid;
+        let name = if is_owner {
+            owner_pet_name
                 .map(|n| n.to_owned())
-                .unwrap_or_else(|| xid.ur_string());
-            names.push(name);
+                .unwrap_or_else(|| xid.ur_string())
         } else {
             let record = registry.participant(&xid).ok_or_else(|| {
                 anyhow::anyhow!(
@@ -462,12 +468,12 @@ fn participant_names_from_registry(
                     xid.ur_string()
                 )
             })?;
-            let name = record
+            record
                 .pet_name()
                 .map(|n| n.to_owned())
-                .unwrap_or_else(|| xid.ur_string());
-            names.push(name);
-        }
+                .unwrap_or_else(|| xid.ur_string())
+        };
+        names.push(format_name_with_owner_marker(name, is_owner));
     }
     Ok(names)
 }
@@ -499,16 +505,19 @@ fn resolve_sender_name(
     if let Some(owner) = registry.owner()
         && owner.xid_document().xid() == sender.xid()
     {
-        return owner.pet_name().map(|s| s.to_owned());
+        let name = owner
+            .pet_name()
+            .map(|s| s.to_owned())
+            .unwrap_or_else(|| sender.xid().ur_string());
+        return Some(format_name_with_owner_marker(name, true));
     }
-    registry
-        .participant(&sender.xid())
-        .and_then(|record| {
-            record
-                .pet_name()
-                .map(|n| n.to_owned())
-                .or_else(|| Some(record.xid().ur_string()))
-        })
+    registry.participant(&sender.xid()).map(|record| {
+        let name = record
+            .pet_name()
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| record.xid().ur_string());
+        format_name_with_owner_marker(name, false)
+    })
 }
 
 #[allow(dead_code)]
@@ -543,4 +552,12 @@ fn parse_arid_ur(input: &str) -> Result<ARID> {
             CBOR::try_into_byte_string(cbor).context("Invalid ARID payload")?;
         ARID::from_data_ref(bytes).context("Invalid ARID payload")
     })
+}
+
+fn format_name_with_owner_marker(name: String, is_owner: bool) -> String {
+    if is_owner {
+        format!("* {name}")
+    } else {
+        name
+    }
 }

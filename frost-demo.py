@@ -451,11 +451,14 @@ echo "{upper}_SIGNED_DOC=${upper}_SIGNED_DOC"
                     f'frost registry participant add --registry "${registry_var}" "${other_upper}_SIGNED_DOC" {other.title()}'
                 )
             participant_block = "\n".join(participant_lines)
+            cat_registry = (
+                f'cat "${{{registry_var}}}"' if owner == "alice" else ""
+            )
             script = f"""
 {registry_var}={qp(registry_path)}
 frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC" {owner_title}
 {participant_block}
-cat "${registry_var}"
+{cat_registry}
 """
             run_step(
                 shell,
@@ -469,9 +472,9 @@ cat "${registry_var}"
 
         run_step(
             shell,
-            "Showing Alice's DKG invite (request envelope)",
+            "Composing Alice's DKG invite (request envelope)",
             f"""
-ALICE_INVITE=$(frost dkg invite show --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE=$(frost dkg invite compose --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE}}" | envelope format
 """,
             commentary=(
@@ -482,9 +485,9 @@ echo "${{ALICE_INVITE}}" | envelope format
 
         run_step(
             shell,
-            "Showing Alice's sealed DKG invite",
+            "Composing Alice's sealed DKG invite",
             f"""
-ALICE_INVITE_SEALED=$(frost dkg invite show --registry {qp(REGISTRIES["alice"])} --sealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_SEALED=$(frost dkg invite compose --registry {qp(REGISTRIES["alice"])} --sealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_SEALED}}" | envelope format
 echo "${{ALICE_INVITE_SEALED}}" | envelope info
 """,
@@ -503,9 +506,9 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
 
         run_step(
             shell,
-            "Posting sealed DKG invite to Hubert",
+            "Sending sealed DKG invite to Hubert",
             f"""
-ALICE_INVITE_ARID=$(frost dkg invite put --storage server --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_ARID=$(frost dkg invite send --storage server --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
@@ -518,11 +521,12 @@ echo "${{ALICE_INVITE_ARID}}"
             shell,
             "Viewing invite from Hubert as Bob",
             f"""
-frost dkg invite view --info --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}" Alice
+BOB_INVITE=$(frost dkg invite view --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}" Alice)
+frost dkg invite view --info --no-envelope --storage server --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice
 """,
             commentary=(
-                "Retrieve the invite from Hubert using Bob's registry, "
-                "verify Alice as sender, and show the reply ARID for Bob."
+                "Retrieve the invite from Hubert using Bob's registry (capturing the envelope), "
+                "then show the invite details using the cached envelope."
             ),
         )
 
