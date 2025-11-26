@@ -412,6 +412,16 @@ done
 
         run_step(
             shell,
+            "Configuring storage backend",
+            """
+STORAGE=server
+TIMEOUT=600
+""",
+            "Set the storage backend for Hubert. Can be 'server', 'dht', 'ipfs', or 'hybrid'.",
+        )
+
+        run_step(
+            shell,
             "Preparing demo workspace",
             f"rm -rf {qp(DEMO_DIR)} && mkdir -p {qp(DEMO_DIR)}",
             "Start with a clean directory to capture demo artifacts.",
@@ -500,7 +510,7 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
         run_step(
             shell,
             "Checking Hubert server availability",
-            "frost check --storage server",
+            "frost check --storage $STORAGE",
             "Verify the local Hubert server is responding before publishing the invite.",
         )
 
@@ -508,7 +518,7 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
             shell,
             "Sending sealed DKG invite to Hubert",
             f"""
-ALICE_INVITE_ARID=$(frost dkg invite send --storage server --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_ARID=$(frost dkg invite send --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
@@ -521,7 +531,7 @@ echo "${{ALICE_INVITE_ARID}}"
             shell,
             "Receiving invite from Hubert as Bob",
             f"""
-BOB_INVITE=$(frost dkg invite receive --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}")
+BOB_INVITE=$(frost dkg invite receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}")
 frost dkg invite receive --info --no-envelope --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
@@ -559,7 +569,7 @@ echo "${{BOB_RESPONSE_SEALED}}" | envelope format
             shell,
             "Bob responds to the invite",
             f"""
-frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
+frost dkg invite respond --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
                 "Post Bob's sealed response to Hubert using the cached invite envelope."
@@ -570,11 +580,52 @@ frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} "${
             shell,
             "Carol and Dan respond to the invite",
             f"""
-frost dkg invite respond --storage server --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
-frost dkg invite respond --storage server --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
+frost dkg invite respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
+frost dkg invite respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
                 "Carol and Dan accept the invite from Hubert using their registries, posting their responses to Hubert."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Inspecting Alice's registry after sending invite",
+            f"""
+jq . {qp(REGISTRIES["alice"])}
+""",
+            commentary=(
+                "Alice's registry now contains the group record with pending_requests "
+                "listing the response ARIDs for each participant."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Alice collects Round 1 responses",
+            f"""
+# Get the group ID from Alice's registry
+ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
+echo "Group ID: ${{ALICE_GROUP_ID}}"
+
+# Collect Round 1 responses from all participants
+frost dkg round1 collect --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+""",
+            commentary=(
+                "As coordinator, Alice fetches each participant's sealed response from Hubert, "
+                "validates the GSTP response, extracts the Round 1 packages, and saves them locally."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Inspecting collected Round 1 packages",
+            f"""
+jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round1.json
+""",
+            commentary=(
+                "The collected Round 1 packages are stored in Alice's group-state directory, "
+                "ready for Round 2 processing."
             ),
         )
 
@@ -588,8 +639,14 @@ DEMO_DIR = register_path(SCRIPT_DIR / "demo")
 
 PARTICIPANTS = ["alice", "bob", "carol", "dan"]
 
+# Each participant has their own directory with registry.json inside
+PARTICIPANT_DIRS = {
+    name: register_path(DEMO_DIR / name)
+    for name in PARTICIPANTS
+}
+
 REGISTRIES = {
-    name: register_path(DEMO_DIR / f"{name}-registry.json")
+    name: register_path(PARTICIPANT_DIRS[name] / "registry.json")
     for name in PARTICIPANTS
 }
 

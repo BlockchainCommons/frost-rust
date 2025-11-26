@@ -52,6 +52,45 @@ impl ContributionPaths {
     }
 }
 
+/// Tracks pending responses expected from participants (coordinator-side).
+/// Maps participant XID to the ARID where their response should be posted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct PendingRequests {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requests: Vec<PendingRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct PendingRequest {
+    #[serde(with = "super::group_record::serde_xid")]
+    participant: XID,
+    #[serde(with = "serde_arid")]
+    response_arid: bc_components::ARID,
+}
+
+impl PendingRequests {
+    pub fn new() -> Self { Self { requests: Vec::new() } }
+
+    pub fn add(
+        &mut self,
+        participant: XID,
+        response_arid: bc_components::ARID,
+    ) {
+        self.requests
+            .push(PendingRequest { participant, response_arid });
+    }
+
+    pub fn is_empty(&self) -> bool { self.requests.is_empty() }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&XID, &bc_components::ARID)> {
+        self.requests
+            .iter()
+            .map(|r| (&r.participant, &r.response_arid))
+    }
+
+    pub fn len(&self) -> usize { self.requests.len() }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GroupRecord {
     charter: String,
@@ -61,12 +100,17 @@ pub struct GroupRecord {
     #[serde(default, skip_serializing_if = "ContributionPaths::is_empty")]
     contributions: ContributionPaths,
     /// ARID where we expect the coordinator's next message (e.g., Round 2)
+    /// Used by participants waiting for Round 2.
     #[serde(
         default,
         with = "serde_option_arid",
         skip_serializing_if = "Option::is_none"
     )]
     pending_response: Option<bc_components::ARID>,
+    /// Response ARIDs the coordinator expects from each participant.
+    /// Used by coordinator to collect Round 1 responses.
+    #[serde(default, skip_serializing_if = "PendingRequests::is_empty")]
+    pending_requests: PendingRequests,
 }
 
 impl GroupRecord {
@@ -83,6 +127,7 @@ impl GroupRecord {
             participants,
             contributions: ContributionPaths::default(),
             pending_response: None,
+            pending_requests: PendingRequests::default(),
         }
     }
 
@@ -114,6 +159,18 @@ impl GroupRecord {
 
     pub fn clear_pending_response(&mut self) { self.pending_response = None; }
 
+    pub fn pending_requests(&self) -> &PendingRequests {
+        &self.pending_requests
+    }
+
+    pub fn set_pending_requests(&mut self, requests: PendingRequests) {
+        self.pending_requests = requests;
+    }
+
+    pub fn clear_pending_requests(&mut self) {
+        self.pending_requests = PendingRequests::default();
+    }
+
     pub fn config_matches(&self, other: &GroupRecord) -> bool {
         self.charter == other.charter
             && self.min_signers == other.min_signers
@@ -140,6 +197,41 @@ mod serde_xid {
     {
         let raw = String::deserialize(deserializer)?;
         XID::from_ur_string(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+mod serde_arid {
+    use bc_components::ARID;
+    use bc_envelope::prelude::CBOR;
+    use bc_ur::prelude::UR;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(arid: &ARID, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use bc_envelope::prelude::UREncodable;
+        serializer.serialize_str(&arid.ur_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ARID, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        let ur = UR::from_ur_string(&raw).map_err(serde::de::Error::custom)?;
+        if ur.ur_type_str() != "arid" {
+            return Err(serde::de::Error::custom(format!(
+                "Expected ur:arid, found ur:{}",
+                ur.ur_type_str()
+            )));
+        }
+        let cbor = ur.cbor();
+        ARID::try_from(cbor.clone()).or_else(|_| {
+            let bytes = CBOR::try_into_byte_string(cbor)
+                .map_err(serde::de::Error::custom)?;
+            ARID::from_data_ref(bytes).map_err(serde::de::Error::custom)
+        })
     }
 }
 
