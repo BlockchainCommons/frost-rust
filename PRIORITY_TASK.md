@@ -1,4 +1,71 @@
-Plan for `dkg invite respond` and group tracking
+## Make existing commands consistent
+
+- `invite send` replaces `invite compose`.
+- `invite view` is no longer necessary.
+
+```
+# Just composes the sealed invite and prints its envelope UR:
+
+frost dkg invite send <registry-info> <config-info> <participants>
+
+# The output of this command could be posted using the `hubert put` command to store it in Hubert for retrieval by the participants.
+```
+
+```
+# Just composes the unsealed invite and prints its envelope UR:
+
+frost dkg invite send --unsealed <registry-info> <config-info> <participants>
+
+# This version is unsealed, so it's not suitable for posting to Hubert, but it can be inspected directly.
+```
+
+```
+# Composes the sealed invite, stores it in Hubert, and prints the invite ARID UR:
+
+frost dkg invite send <registry-info> <config-info> <hubert info> <participants>
+
+# Note the `--unsealed` flag is invalid in this case.
+```
+
+```
+frost dkg invite receive <registry-info> <hubert-info> <invite-arid> [--timeout <seconds>] [--no-envelope] [--info]
+
+# This command retrieves the sealed invite from Hubert using the provided ARID, decrypts and verifies it, and prints the invite envelope (unless --no-envelope) and invite details (if --info).
+```
+
+```
+frost dkg invite receive <registry-info> <invite-envelope>
+
+# This command processes the provided invite envelope directly, decrypts and verifies it, and prints the invite details.
+```
+
+```
+# Compose a response to an invite, either accepting it (default) or rejecting it with a reason:
+
+frost dkg invite respond <registry-info> <invite-envelope> [--reject <reason>]
+
+# This command composes a response to the provided invite envelope, either accepting it (default) or rejecting it with the provided reason, and prints the sealed response envelope UR.
+# This version can be posted to Hubert for retrieval by the coordinator. The coordinator knows where to find it because the invite included a reply ARID for the participant to use.
+```
+
+```
+# Compose a response to an invite, either accepting it (default) or rejecting it with a reason, and print the unsealed response envelope UR:
+
+frost dkg invite respond <registry-info> <invite-envelope> [--reject <reason>] --unsealed
+
+# This command composes a response to the provided invite envelope, either accepting it (default) or rejecting it with the provided reason, and prints the unsealed response envelope UR for inspection.
+# This version is not suitable for posting to Hubert.
+```
+
+```
+# Compose a response to an invite, either accepting it (default) or rejecting it with a reason, and store it in Hubert.
+
+frost dkg invite respond <registry-info> <hubert-info> <invite-envelope> [--reject <reason>]
+
+# The response ARID for the coordinator's next message is included in the response envelope, and therefore does not need to be printed separately.
+```
+
+## Plan for `dkg invite respond` and group tracking
 
 1) Rename session ID to group ID
    - Throughout CLI, registry, and envelopes, treat the invite’s session ID as `group_id`. Update terminology accordingly.

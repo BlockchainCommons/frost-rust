@@ -534,15 +534,15 @@ frost dkg invite view --info --no-envelope --storage server --registry {qp(REGIS
             shell,
             "Bob responds to the invite (viewing his response envelope)",
             f"""
-BOB_RESPONSE_OUTPUT=$(frost dkg invite respond --storage server --print-envelope --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice)
-BOB_RESPONSE_ENVELOPE=$(echo "${{BOB_RESPONSE_OUTPUT}}" | sed -n '1p')
-BOB_RESPONSE_ARID=$(echo "${{BOB_RESPONSE_OUTPUT}}" | sed -n '2p' | awk '{{print $3}}')
-echo "Response ARID: $BOB_RESPONSE_ARID"
+BOB_RESPONSE_PREVIEW=$(frost dkg invite respond --no-send --print-envelope --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice)
+BOB_RESPONSE_ENVELOPE=$(echo "${{BOB_RESPONSE_PREVIEW}}" | sed -n 's/.*Unsealed: //p')
 echo "${{BOB_RESPONSE_ENVELOPE}}" | envelope format
+BOB_RESPONSE_ARID=$(frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice | sed -n 's/^Response ARID: //p')
+echo "Response ARID: $BOB_RESPONSE_ARID"
 """,
             commentary=(
-                "Bob accepts the invite using his registry and cached invite envelope, posting his response to Hubert. "
-                "Capture and format his response envelope to inspect the GSTP response and continuation details."
+                "Bob previews his unsealed response using the cached invite envelope, then sends the sealed response to Hubert. "
+                "Format the unsealed response to see the GSTP response and continuation details before posting."
             ),
         )
 

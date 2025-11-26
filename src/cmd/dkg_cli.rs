@@ -79,9 +79,13 @@ pub struct InviteRespondArgs {
     #[arg(long = "no-send")]
     no_send: bool,
 
-    /// Print the response envelope UR
+    /// Print the response envelope UR for inspection
     #[arg(long = "print-envelope")]
     print_envelope: bool,
+
+    /// Print the unsealed response envelope UR instead of the sealed envelope
+    #[arg(long = "unsealed")]
+    unsealed: bool,
 
     /// Reject the invite with the provided reason (accepts by default)
     #[arg(long = "reject", value_name = "REASON")]
@@ -116,7 +120,7 @@ impl InviteRespondArgs {
         let envelope_override = self.envelope.clone();
         let timeout = self.timeout;
         let reject_reason = self.reject_reason.clone();
-        let should_print = self.print_envelope || self.no_send;
+        let should_print = self.print_envelope || self.no_send || self.unsealed;
         let should_send = !self.no_send;
         let registry_path_for_state = registry_path.clone();
 
@@ -214,7 +218,7 @@ impl InviteRespondArgs {
                 .xid_document()
                 .inception_private_keys()
                 .context("Owner XID document has no signing keys")?;
-            let mut sealed = if let Some(reason) = reject_reason {
+            let mut sealed = if let Some(ref reason) = reject_reason {
                 let error_body = Envelope::new("dkgInviteReject")
                     .add_assertion("group", details.invitation.group_id())
                     .add_assertion("response_arid", next_response_arid)
@@ -223,7 +227,8 @@ impl InviteRespondArgs {
                     details.invitation.request_id(),
                     owner.xid_document().clone(),
                 )
-                .with_error(error_body)
+                .with_error(error_body.clone())
+                .with_state(next_response_arid)
             } else {
                 SealedResponse::new_success(
                     details.invitation.request_id(),
@@ -235,6 +240,20 @@ impl InviteRespondArgs {
             sealed =
                 sealed.with_peer_continuation(details.invitation.peer_continuation());
 
+            let preview_envelope = if self.print_envelope {
+                if let Some(reason) = &reject_reason {
+                    let error_body = Envelope::new("dkgInviteReject")
+                        .add_assertion("group", details.invitation.group_id())
+                        .add_assertion("response_arid", next_response_arid)
+                        .add_assertion("reason", reason.clone());
+                    Some(error_body)
+                } else {
+                    Some(response_body.clone())
+                }
+            } else {
+                None
+            };
+
             let response_envelope = sealed.to_envelope(
                 Some(details.invitation.valid_until()),
                 Some(signer_private_keys),
@@ -242,7 +261,13 @@ impl InviteRespondArgs {
             )?;
 
             if should_print {
-                println!("{}", response_envelope.ur_string());
+                if self.unsealed {
+                    if let Some(preview) = preview_envelope {
+                        println!("{}", preview.ur_string());
+                    }
+                } else {
+                    println!("{}", response_envelope.ur_string());
+                }
             }
 
             if should_send {
@@ -787,10 +812,8 @@ fn build_response_body(
         .add_assertion("response_arid", response_arid);
     if let Some(package) = round1_package {
         let encoded = serde_json::to_vec(package)?;
-        envelope = envelope.add_assertion(
-            "round1_package",
-            CBOR::from(encoded.as_slice()),
-        );
+        let bstr = CBOR::to_byte_string(encoded.as_slice());
+        envelope = envelope.add_assertion("round1_package", bstr);
     }
     Ok(envelope)
 }
