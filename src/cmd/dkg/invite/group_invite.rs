@@ -239,7 +239,7 @@ impl DkgInvitation {
     pub fn from_invite(
         invite: Envelope,
         now: Date,
-        expected_sender: &XIDDocument,
+        expected_sender: Option<&XIDDocument>,
         recipient: &XIDDocument,
     ) -> Result<Self> {
         let recipient_private_keys =
@@ -256,7 +256,9 @@ impl DkgInvitation {
             recipient_private_keys,
         )?;
 
-        if sealed_request.sender().xid() != expected_sender.xid() {
+        if let Some(expected_sender) = expected_sender
+            && sealed_request.sender().xid() != expected_sender.xid()
+        {
             anyhow::bail!("Invite sender does not match expected sender");
         }
 
@@ -280,8 +282,9 @@ impl DkgInvitation {
         let charter: String = sealed_request
             .request()
             .extract_object_for_parameter("charter")?;
-        let group_id: ARID =
-            sealed_request.request().extract_object_for_parameter("group")?;
+        let group_id: ARID = sealed_request
+            .request()
+            .extract_object_for_parameter("group")?;
         let participant_objects = sealed_request
             .request()
             .objects_for_parameter("participant");

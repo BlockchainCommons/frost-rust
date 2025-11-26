@@ -185,9 +185,13 @@ fn test_dkg_group_invite() {
     "#}).trim();
     assert_actual_expected!(gstp_envelope.format(), expected_format);
 
-    let alice_invite =
-        DkgInvitation::from_invite(gstp_envelope, date, &coordinator, &alice)
-            .unwrap();
+    let alice_invite = DkgInvitation::from_invite(
+        gstp_envelope,
+        date,
+        Some(&coordinator),
+        &alice,
+    )
+    .unwrap();
 
     assert_eq!(alice_invite.sender().xid(), coordinator.xid());
     assert_eq!(alice_invite.response_arid(), alice_response_arid);

@@ -1,7 +1,7 @@
+mod group_record;
 mod owner_record;
 mod participant_record;
 mod registry_impl;
-mod group_record;
 
 pub use group_record::{
     ContributionPaths, GroupParticipant, GroupRecord, GroupStatus,

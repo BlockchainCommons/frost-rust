@@ -141,9 +141,7 @@ impl GroupRecord {
         self.next_response_arid = Some(arid);
     }
 
-    pub fn next_response_arid(&self) -> Option<ARID> {
-        self.next_response_arid
-    }
+    pub fn next_response_arid(&self) -> Option<ARID> { self.next_response_arid }
 
     pub fn merge_contributions(&mut self, other: &ContributionPaths) {
         self.contributions.merge_missing(other);
@@ -172,8 +170,9 @@ impl GroupRecord {
 }
 
 mod serde_xid {
-    use super::*;
     use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::*;
 
     pub fn serialize<S>(xid: &XID, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -192,13 +191,11 @@ mod serde_xid {
 }
 
 mod serde_arid {
-    use super::*;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(
-        arid: &ARID,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    use super::*;
+
+    pub fn serialize<S>(arid: &ARID, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -210,8 +207,7 @@ mod serde_arid {
         D: Deserializer<'de>,
     {
         let raw = String::deserialize(deserializer)?;
-        let ur = UR::from_ur_string(&raw)
-            .map_err(serde::de::Error::custom)?;
+        let ur = UR::from_ur_string(&raw).map_err(serde::de::Error::custom)?;
         if ur.ur_type_str() != "arid" {
             return Err(serde::de::Error::custom(format!(
                 "Expected ur:arid, found ur:{}",
@@ -228,8 +224,9 @@ mod serde_arid {
 }
 
 mod serde_option_arid {
-    use super::*;
     use serde::{Deserialize, Deserializer, Serializer, de::IntoDeserializer};
+
+    use super::*;
 
     pub fn serialize<S>(
         value: &Option<ARID>,

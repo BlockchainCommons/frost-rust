@@ -7,9 +7,9 @@
 ```
 frost registry participant add [--registry <PATH>] <XID_DOCUMENT> [<PET_NAME>]
 frost registry owner set [--registry <PATH>] <XID_DOCUMENT>
-frost dkg invite compose [--registry <PATH>] [--sealed] [--min-signers <N>] [--charter <STRING>] <PARTICIPANT>...
-frost dkg invite send [--registry <PATH>] [--min-signers <N>] [--charter <STRING>] [--storage <BACKEND> --host <HOST> --port <PORT>] <PARTICIPANT>...
-frost dkg invite view [--registry <PATH>] [--timeout <SECONDS>] [--storage <BACKEND> --host <HOST> --port <PORT>] <UR:ARID> <SENDER>
+frost dkg invite send [--registry <PATH>] [--min-signers <N>] [--charter <STRING>] [--unsealed] [--storage <BACKEND> --host <HOST> --port <PORT>] <PARTICIPANT>...
+frost dkg invite receive [--registry <PATH>] [--timeout <SECONDS>] [--no-envelope] [--info] [--sender <SENDER>] [--storage <BACKEND> --host <HOST> --port <PORT>] <UR:ARID|UR:ENVELOPE>
+frost dkg invite respond [--registry <PATH>] [--timeout <SECONDS>] [--response-arid <UR:ARID>] [--unsealed] [--reject <REASON>] [--sender <SENDER>] [--storage <BACKEND> --host <HOST> --port <PORT>] <UR:ARID|UR:ENVELOPE>
 ```
 
 - `XID_DOCUMENT` must be a valid `ur:xid` string representing an `XIDDocument` that is signed by its inception key.
@@ -18,7 +18,7 @@ frost dkg invite view [--registry <PATH>] [--timeout <SECONDS>] [--storage <BACK
 
 By default commands store registry data in `registry.json` within the current working directory, creating the file if it does not exist. Re-running the same command with identical arguments is idempotent.
 
-The `registry owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys. The `dkg invite send` command seals a DKG invite for the selected participants and stores it in the chosen Hubert backend, printing the ARID (UR) on success so it can be shared out-of-band. The `dkg invite view` command retrieves, decrypts, and validates a sealed invite from Hubert for the registry owner and reports the reply ARID to use when responding.
+The `registry owner set` command records an owner entry whose `XIDDocument` must include private keys; it fails if an owner already exists with different keys. The `dkg invite send` command seals a DKG invite for the selected participants; without Hubert parameters it prints the sealed (or `--unsealed`) envelope UR for inspection, and with Hubert parameters it stores the sealed invite and prints only the ARID to share out-of-band. The `dkg invite receive` command decrypts and validates a sealed invite from Hubert or a provided envelope and can optionally print summary info. The `dkg invite respond` command composes a response to an invite; without Hubert parameters it prints the sealed or unsealed response envelope, and with Hubert parameters it posts the sealed response without printing an ARID because the request/response flow already carries it.
 
 ## License
 

@@ -147,7 +147,11 @@ impl StorageClient {
     }
 }
 
-fn ensure_absent<T>(value: Option<T>, flag: &str, backend: &str) -> Result<()> {
+pub(crate) fn ensure_absent<T>(
+    value: Option<T>,
+    flag: &str,
+    backend: &str,
+) -> Result<()> {
     if value.is_some() {
         bail!("{flag} option is not supported for --storage {backend}");
     }

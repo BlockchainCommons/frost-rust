@@ -10,7 +10,7 @@ use bc_components::{ARID, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_ur::prelude::UR;
 use bc_xid::{XIDDocument, XIDVerifySignature};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use frost_ed25519::{self as frost, Identifier};
 use gstp::{
     SealedRequest, SealedRequestBehavior, SealedResponse,
@@ -23,7 +23,9 @@ use crate::{
     DkgGroupInvite, DkgInvitation,
     cmd::{
         registry::participants_file_path,
-        storage::{StorageClient, StorageSelector},
+        storage::{
+            StorageBackend, StorageClient, StorageSelection, StorageSelector,
+        },
     },
     registry::{
         ContributionPaths, GroupParticipant, GroupRecord, GroupStatus,
@@ -53,37 +55,63 @@ impl CommandArgs {
     }
 }
 
+#[derive(Debug, Clone, Args)]
+#[doc(hidden)]
+pub struct OptionalStorageSelector {
+    /// Storage backend to use
+    #[arg(long, short, value_enum)]
+    storage: Option<StorageBackend>,
+
+    /// Server/IPFS host (for --storage server)
+    #[arg(long)]
+    host: Option<String>,
+
+    /// Port (for --storage server, --storage ipfs, or --storage hybrid)
+    #[arg(long)]
+    port: Option<u16>,
+}
+
+impl OptionalStorageSelector {
+    pub fn resolve(&self) -> Result<Option<StorageSelection>> {
+        if let Some(storage) = self.storage {
+            let selector = StorageSelector {
+                storage,
+                host: self.host.clone(),
+                port: self.port,
+            };
+            return Ok(Some(selector.resolve()?));
+        }
+
+        if self.host.is_some() || self.port.is_some() {
+            bail!("--host/--port require --storage to select a Hubert backend");
+        }
+
+        Ok(None)
+    }
+}
+
 #[derive(Debug, Parser)]
 #[doc(hidden)]
 pub struct InviteRespondArgs {
     #[command(flatten)]
-    storage: StorageSelector,
+    storage: OptionalStorageSelector,
 
     /// Optional registry path or filename override
     #[arg(long = "registry", value_name = "PATH")]
     registry: Option<String>,
 
-    /// Wait up to this many seconds for the invite to appear
+    /// Wait up to this many seconds for the invite to appear (when fetching
+    /// from Hubert)
     #[arg(long = "timeout", value_name = "SECONDS")]
     timeout: Option<u64>,
 
-    /// Optional pre-fetched invite envelope (ur:envelope); skips Hubert retrieval when present
-    #[arg(long = "envelope", value_name = "UR:ENVELOPE")]
-    envelope: Option<String>,
-
-    /// Optional ARID to use for the next response in the exchange; defaults to a new random ARID
+    /// Optional ARID to use for the next response in the exchange; defaults to
+    /// a new random ARID
     #[arg(long = "response-arid", value_name = "UR:ARID")]
     response_arid: Option<String>,
 
-    /// Do not send the response to Hubert; still performs validation and state updates
-    #[arg(long = "no-send")]
-    no_send: bool,
-
-    /// Print the response envelope UR for inspection
-    #[arg(long = "print-envelope")]
-    print_envelope: bool,
-
     /// Print the unsealed response envelope UR instead of the sealed envelope
+    /// (local-only)
     #[arg(long = "unsealed")]
     unsealed: bool,
 
@@ -91,192 +119,191 @@ pub struct InviteRespondArgs {
     #[arg(long = "reject", value_name = "REASON")]
     reject_reason: Option<String>,
 
-    /// ARID for the sealed invite (ur:arid)
-    #[arg(value_name = "UR:ARID")]
-    arid: String,
+    /// Optionally require the invite to come from this sender (ur:xid or pet
+    /// name in registry)
+    #[arg(long = "sender", value_name = "SENDER")]
+    sender: Option<String>,
 
-    /// Expected sender of the invite (ur:xid or pet name in registry)
-    #[arg(value_name = "SENDER")]
-    sender: String,
+    /// Invite ARID or envelope (ur:arid or ur:envelope)
+    #[arg(value_name = "INVITE")]
+    invite: String,
 }
 
 impl InviteRespondArgs {
     pub fn exec(self) -> Result<()> {
         let selection = self.storage.resolve()?;
+        if selection.is_none() && self.timeout.is_some() {
+            bail!("--timeout requires Hubert storage parameters");
+        }
+        if selection.is_some() && self.unsealed {
+            bail!("--unsealed cannot be used with Hubert storage options");
+        }
         let registry_path = participants_file_path(self.registry.clone())?;
-        let mut registry = Registry::load(&registry_path).with_context(|| {
-            format!("Failed to load registry at {}", registry_path.display())
-        })?;
+        let mut registry =
+            Registry::load(&registry_path).with_context(|| {
+                format!(
+                    "Failed to load registry at {}",
+                    registry_path.display()
+                )
+            })?;
         let owner = registry
             .owner()
             .context("Registry owner with private keys is required")?
             .clone();
-        let expected_sender = resolve_sender(&registry, self.sender.as_str())?;
-        let invite_arid = parse_arid_ur(&self.arid)?;
+        let expected_sender = match &self.sender {
+            Some(raw) => Some(resolve_sender(&registry, raw)?),
+            None => None,
+        };
         let next_response_arid = match &self.response_arid {
             Some(raw) => parse_arid_ur(raw)?,
             None => ARID::new(),
         };
-        let envelope_override = self.envelope.clone();
-        let timeout = self.timeout;
-        let reject_reason = self.reject_reason.clone();
-        let should_print = self.print_envelope || self.no_send || self.unsealed;
-        let should_send = !self.no_send;
-        let registry_path_for_state = registry_path.clone();
 
-        let runtime = Runtime::new()?;
-        runtime.block_on(async move {
-            let client = StorageClient::from_selection(selection).await?;
-            let invite_envelope = if let Some(raw) = envelope_override {
-                parse_envelope_ur(&raw)?
-            } else {
-                client
-                    .get(&invite_arid, timeout)
-                    .await?
-                    .context("Invite not found in Hubert storage")?
-            };
+        let invite_envelope = resolve_invite_envelope(
+            selection.clone(),
+            &self.invite,
+            self.timeout,
+        )?;
 
-            let now = Date::now();
-            let details = decode_invite_details(
-                invite_envelope,
-                now,
-                expected_sender,
-                owner.xid_document(),
+        let now = Date::now();
+        let details = decode_invite_details(
+            invite_envelope,
+            now,
+            &registry,
+            owner.xid_document(),
+            expected_sender,
+        )?;
+
+        let mut sorted_participants = details.participants.clone();
+        sorted_participants.sort_by_key(|doc| doc.xid());
+        let owner_index = sorted_participants
+            .iter()
+            .position(|doc| doc.xid() == owner.xid())
+            .context("Invite does not include the registry owner")?;
+        let identifier_index = u16::try_from(owner_index + 1)
+            .context("Too many participants for identifiers")?;
+        let identifier = Identifier::try_from(identifier_index)?;
+        let total = u16::try_from(sorted_participants.len())
+            .context("Too many participants for FROST identifiers")?;
+        let min_signers = u16::try_from(details.invitation.min_signers())
+            .context("min_signers does not fit into identifier space")?;
+
+        let group_participants =
+            build_group_participants(&registry, &owner, &sorted_participants)?;
+        let coordinator = group_participant_from_registry(
+            &registry,
+            &owner,
+            &details.invitation.sender(),
+        )?;
+
+        let mut contributions = ContributionPaths::default();
+        let mut response_body = build_response_body(
+            details.invitation.group_id(),
+            owner.xid(),
+            identifier_index,
+            next_response_arid,
+            None,
+        )?;
+
+        if self.reject_reason.is_none() {
+            let (round1_secret, round1_package) =
+                frost::keys::dkg::part1(identifier, total, min_signers, OsRng)?;
+            contributions = persist_round1_state(
+                &registry_path,
+                &details.invitation.group_id(),
+                &round1_secret,
+                &round1_package,
             )?;
-
-            let mut sorted_participants = details.participants.clone();
-            sorted_participants.sort_by_key(|doc| doc.xid());
-            let owner_index = sorted_participants
-                .iter()
-                .position(|doc| doc.xid() == owner.xid())
-                .context("Invite does not include the registry owner")?;
-            let identifier_index =
-                u16::try_from(owner_index + 1).context("Too many participants for identifiers")?;
-            let identifier = Identifier::try_from(identifier_index)?;
-            let total = u16::try_from(sorted_participants.len())
-                .context("Too many participants for FROST identifiers")?;
-            let min_signers = u16::try_from(details.invitation.min_signers())
-                .context("min_signers does not fit into identifier space")?;
-
-            let group_participants = build_group_participants(
-                &registry,
-                &owner,
-                &sorted_participants,
-            )?;
-            let coordinator = group_participant_from_registry(
-                &registry,
-                &owner,
-                &details.invitation.sender(),
-            )?;
-
-            let mut contributions = ContributionPaths::default();
-            let mut response_body = build_response_body(
+            response_body = build_response_body(
                 details.invitation.group_id(),
                 owner.xid(),
                 identifier_index,
                 next_response_arid,
-                None,
+                Some(&round1_package),
             )?;
+        }
 
-            if reject_reason.is_none() {
-                let (round1_secret, round1_package) =
-                    frost::keys::dkg::part1(identifier, total, min_signers, OsRng)?;
-                contributions = persist_round1_state(
-                    &registry_path_for_state,
-                    &details.invitation.group_id(),
-                    &round1_secret,
-                    &round1_package,
-                )?;
-                response_body = build_response_body(
-                    details.invitation.group_id(),
-                    owner.xid(),
-                    identifier_index,
-                    next_response_arid,
-                    Some(&round1_package),
-                )?;
+        let status = match &self.reject_reason {
+            Some(reason) => {
+                GroupStatus::Rejected { reason: Some(reason.clone()) }
             }
+            None => GroupStatus::Accepted,
+        };
+        let mut group_record = GroupRecord::new(
+            details.invitation.charter().to_owned(),
+            details.invitation.min_signers(),
+            coordinator,
+            group_participants,
+            details.invitation.request_id(),
+            details.invitation.response_arid(),
+            status.clone(),
+        );
+        group_record.set_contributions(contributions);
+        group_record.set_next_response_arid(next_response_arid);
+        registry.record_group(details.invitation.group_id(), group_record)?;
+        registry.save(&registry_path)?;
 
-            let status = match &reject_reason {
-                Some(reason) => GroupStatus::Rejected { reason: Some(reason.clone()) },
-                None => GroupStatus::Accepted,
-            };
-            let mut group_record = GroupRecord::new(
-                details.invitation.charter().to_owned(),
-                details.invitation.min_signers(),
-                coordinator,
-                group_participants,
+        let signer_private_keys = owner
+            .xid_document()
+            .inception_private_keys()
+            .context("Owner XID document has no signing keys")?;
+        let mut sealed = if let Some(ref reason) = self.reject_reason {
+            let error_body = Envelope::new("dkgInviteReject")
+                .add_assertion("group", details.invitation.group_id())
+                .add_assertion("response_arid", next_response_arid)
+                .add_assertion("reason", reason.clone());
+            SealedResponse::new_failure(
                 details.invitation.request_id(),
-                details.invitation.response_arid(),
-                status.clone(),
-            );
-            group_record.set_contributions(contributions);
-            group_record.set_next_response_arid(next_response_arid);
-            registry.record_group(details.invitation.group_id(), group_record)?;
-            registry.save(&registry_path_for_state)?;
+                owner.xid_document().clone(),
+            )
+            .with_error(error_body.clone())
+            .with_state(next_response_arid)
+        } else {
+            SealedResponse::new_success(
+                details.invitation.request_id(),
+                owner.xid_document().clone(),
+            )
+            .with_result(response_body.clone())
+            .with_state(next_response_arid)
+        };
+        sealed = sealed
+            .with_peer_continuation(details.invitation.peer_continuation());
 
-            let signer_private_keys = owner
-                .xid_document()
-                .inception_private_keys()
-                .context("Owner XID document has no signing keys")?;
-            let mut sealed = if let Some(ref reason) = reject_reason {
-                let error_body = Envelope::new("dkgInviteReject")
-                    .add_assertion("group", details.invitation.group_id())
-                    .add_assertion("response_arid", next_response_arid)
-                    .add_assertion("reason", reason.clone());
-                SealedResponse::new_failure(
-                    details.invitation.request_id(),
-                    owner.xid_document().clone(),
-                )
-                .with_error(error_body.clone())
-                .with_state(next_response_arid)
-            } else {
-                SealedResponse::new_success(
-                    details.invitation.request_id(),
-                    owner.xid_document().clone(),
-                )
-                .with_result(response_body.clone())
-                .with_state(next_response_arid)
-            };
-            sealed =
-                sealed.with_peer_continuation(details.invitation.peer_continuation());
+        let preview_envelope = if let Some(reason) = &self.reject_reason {
+            let error_body = Envelope::new("dkgInviteReject")
+                .add_assertion("group", details.invitation.group_id())
+                .add_assertion("response_arid", next_response_arid)
+                .add_assertion("reason", reason.clone());
+            Some(error_body)
+        } else {
+            Some(response_body.clone())
+        };
 
-            let preview_envelope = if self.print_envelope {
-                if let Some(reason) = &reject_reason {
-                    let error_body = Envelope::new("dkgInviteReject")
-                        .add_assertion("group", details.invitation.group_id())
-                        .add_assertion("response_arid", next_response_arid)
-                        .add_assertion("reason", reason.clone());
-                    Some(error_body)
-                } else {
-                    Some(response_body.clone())
-                }
-            } else {
-                None
-            };
+        let response_envelope = sealed.to_envelope(
+            Some(details.invitation.valid_until()),
+            Some(signer_private_keys),
+            Some(&details.invitation.sender()),
+        )?;
 
-            let response_envelope = sealed.to_envelope(
-                Some(details.invitation.valid_until()),
-                Some(signer_private_keys),
-                Some(&details.invitation.sender()),
-            )?;
-
-            if should_print {
-                if self.unsealed {
-                    if let Some(preview) = preview_envelope {
-                        println!("{}", preview.ur_string());
-                    }
-                } else {
-                    println!("{}", response_envelope.ur_string());
-                }
+        if let Some(selection) = selection {
+            let response_target = details.invitation.response_arid();
+            let envelope_to_send = response_envelope.clone();
+            let runtime = Runtime::new()?;
+            runtime.block_on(async move {
+                let client = StorageClient::from_selection(selection).await?;
+                client.put(&response_target, &envelope_to_send).await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
+            // println!("Response posted to Hubert.");
+        } else if self.unsealed {
+            if let Some(preview) = preview_envelope {
+                println!("{}", preview.ur_string());
             }
+        } else {
+            println!("{}", response_envelope.ur_string());
+        }
 
-            if should_send {
-                client.put(&details.invitation.response_arid(), &response_envelope).await?;
-            }
-
-            println!("Response ARID: {}", next_response_arid.ur_string());
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -290,12 +317,10 @@ pub struct InviteArgs {
 #[derive(Debug, Subcommand)]
 #[doc(hidden)]
 enum InviteCommands {
-    /// Compose a DKG invite for the given participants
-    Compose(InviteShowArgs),
-    /// Create a sealed DKG invite and store it in Hubert
-    Send(InvitePutArgs),
-    /// Retrieve and inspect a sealed DKG invite from Hubert
-    View(InviteViewArgs),
+    /// Compose or send a DKG invite
+    Send(InviteSendArgs),
+    /// Retrieve or inspect a DKG invite
+    Receive(InviteReceiveArgs),
     /// Respond to a DKG invite
     Respond(InviteRespondArgs),
 }
@@ -303,9 +328,8 @@ enum InviteCommands {
 impl InviteArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            InviteCommands::Compose(args) => args.exec(),
             InviteCommands::Send(args) => args.exec(),
-            InviteCommands::View(args) => args.exec(),
+            InviteCommands::Receive(args) => args.exec(),
             InviteCommands::Respond(args) => args.exec(),
         }
     }
@@ -313,14 +337,13 @@ impl InviteArgs {
 
 #[derive(Debug, Parser)]
 #[doc(hidden)]
-pub struct InviteShowArgs {
+pub struct InviteSendArgs {
+    #[command(flatten)]
+    storage: OptionalStorageSelector,
+
     /// Optional registry path or filename override
     #[arg(long = "registry", value_name = "PATH")]
     registry: Option<String>,
-
-    /// Return a sealed invite envelope instead of the request envelope
-    #[arg(long)]
-    sealed: bool,
 
     /// Minimum signers required; defaults to participant count
     #[arg(long = "min-signers", value_name = "N")]
@@ -330,13 +353,22 @@ pub struct InviteShowArgs {
     #[arg(long = "charter", value_name = "STRING", default_value = "")]
     charter: String,
 
+    /// Print the unsealed invite envelope UR instead of the sealed envelope
+    #[arg(long = "unsealed")]
+    unsealed: bool,
+
     /// Participants to include, by pet name or ur:xid identifier
     #[arg(required = true, value_name = "PARTICIPANT")]
     participants: Vec<String>,
 }
 
-impl InviteShowArgs {
+impl InviteSendArgs {
     pub fn exec(self) -> Result<()> {
+        let selection = self.storage.resolve()?;
+        if selection.is_some() && self.unsealed {
+            bail!("--unsealed cannot be used with Hubert storage options");
+        }
+
         let invite = build_invite(
             self.registry,
             self.min_signers,
@@ -344,11 +376,23 @@ impl InviteShowArgs {
             self.participants,
         )?;
 
-        if self.sealed {
+        if let Some(selection) = selection {
             let envelope = invite.to_envelope()?;
+            let arid = ARID::new();
+
+            let runtime = Runtime::new()?;
+            runtime.block_on(async move {
+                let client = StorageClient::from_selection(selection).await?;
+                client.put(&arid, &envelope).await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
+
+            println!("{}", arid.ur_string());
+        } else if self.unsealed {
+            let envelope = invite.to_request()?.request().to_envelope();
             println!("{}", envelope.ur_string());
         } else {
-            let envelope = invite.to_request()?.request().to_envelope();
+            let envelope = invite.to_envelope()?;
             println!("{}", envelope.ur_string());
         }
 
@@ -358,54 +402,9 @@ impl InviteShowArgs {
 
 #[derive(Debug, Parser)]
 #[doc(hidden)]
-pub struct InvitePutArgs {
+pub struct InviteReceiveArgs {
     #[command(flatten)]
-    storage: StorageSelector,
-
-    /// Optional registry path or filename override
-    #[arg(long = "registry", value_name = "PATH")]
-    registry: Option<String>,
-
-    /// Minimum signers required; defaults to participant count
-    #[arg(long = "min-signers", value_name = "N")]
-    min_signers: Option<usize>,
-
-    /// Charter statement for the DKG group
-    #[arg(long = "charter", value_name = "STRING", default_value = "")]
-    charter: String,
-
-    /// Participants to include, by pet name or ur:xid identifier
-    #[arg(required = true, value_name = "PARTICIPANT")]
-    participants: Vec<String>,
-}
-
-impl InvitePutArgs {
-    pub fn exec(self) -> Result<()> {
-        let selection = self.storage.resolve()?;
-        let invite = build_invite(
-            self.registry,
-            self.min_signers,
-            self.charter,
-            self.participants,
-        )?;
-        let envelope = invite.to_envelope()?;
-        let arid = ARID::new();
-
-        let runtime = Runtime::new()?;
-        runtime.block_on(async move {
-            let client = StorageClient::from_selection(selection).await?;
-            client.put(&arid, &envelope).await?;
-            println!("{}", arid.ur_string());
-            Ok(())
-        })
-    }
-}
-
-#[derive(Debug, Parser)]
-#[doc(hidden)]
-pub struct InviteViewArgs {
-    #[command(flatten)]
-    storage: StorageSelector,
+    storage: OptionalStorageSelector,
 
     /// Optional registry path or filename override
     #[arg(long = "registry", value_name = "PATH")]
@@ -415,30 +414,31 @@ pub struct InviteViewArgs {
     #[arg(long = "timeout", value_name = "SECONDS")]
     timeout: Option<u64>,
 
-    /// ARID for the sealed invite (ur:arid)
-    #[arg(value_name = "UR:ARID")]
-    arid: String,
-
-    /// Optional pre-fetched invite envelope (ur:envelope); skips Hubert retrieval when present
-    #[arg(long = "envelope", value_name = "UR:ENVELOPE")]
-    envelope: Option<String>,
-
-    /// Show invite details (charter, min signers, coordinator, participants, reply ARID)
-    #[arg(long)]
-    info: bool,
-
     /// Suppress printing the invite envelope UR
     #[arg(long)]
     no_envelope: bool,
 
-    /// Expected sender of the invite (ur:xid or pet name in registry)
-    #[arg(value_name = "SENDER")]
-    sender: String,
+    /// Show invite details (charter, min signers, coordinator, participants)
+    #[arg(long)]
+    info: bool,
+
+    /// Optionally require the invite to come from this sender (ur:xid or pet
+    /// name in registry)
+    #[arg(long = "sender", value_name = "SENDER")]
+    sender: Option<String>,
+
+    /// Invite ARID or envelope (ur:arid or ur:envelope)
+    #[arg(value_name = "INVITE")]
+    invite: String,
 }
 
-impl InviteViewArgs {
+impl InviteReceiveArgs {
     pub fn exec(self) -> Result<()> {
         let selection = self.storage.resolve()?;
+        if selection.is_none() && self.timeout.is_some() {
+            bail!("--timeout requires Hubert storage parameters");
+        }
+
         let registry_path = participants_file_path(self.registry.clone())?;
         let registry = Registry::load(&registry_path).with_context(|| {
             format!("Failed to load registry at {}", registry_path.display())
@@ -447,54 +447,81 @@ impl InviteViewArgs {
             .owner()
             .context("Registry owner with private keys is required")?
             .clone();
-        let expected_sender = resolve_sender(&registry, self.sender.as_str())?;
-        let arid = parse_arid_ur(&self.arid)?;
+        let expected_sender = match &self.sender {
+            Some(raw) => Some(resolve_sender(&registry, raw)?),
+            None => None,
+        };
 
-        let registry = registry;
-        let runtime = Runtime::new()?;
-        runtime.block_on(async move {
-            let client = StorageClient::from_selection(selection).await?;
-            let envelope = client
-                .get(&arid, self.timeout)
-                .await?
-                .context("Invite not found in Hubert storage")?;
+        let invite_envelope = resolve_invite_envelope(
+            selection.clone(),
+            &self.invite,
+            self.timeout,
+        )?;
 
-            let now = Date::now();
-            let details = decode_invite_details(
-                envelope,
-                now,
-                expected_sender,
-                owner.xid_document(),
-            )?;
+        let now = Date::now();
+        let details = decode_invite_details(
+            invite_envelope.clone(),
+            now,
+            &registry,
+            owner.xid_document(),
+            expected_sender,
+        )?;
 
-            let participant_names = participant_names_from_registry(
-                &registry,
-                &details.participants,
-                &owner.xid(),
-                owner.pet_name(),
-            )?;
-            let coordinator_name =
-                resolve_sender_name(&registry, &details.invitation.sender());
+        let participant_names = participant_names_from_registry(
+            &registry,
+            &details.participants,
+            &owner.xid(),
+            owner.pet_name(),
+        )?;
+        let coordinator_name =
+            resolve_sender_name(&registry, &details.invitation.sender());
 
-            if !self.no_envelope {
-                println!("{}", details.invitation_envelope.ur_string());
+        if !self.no_envelope {
+            println!("{}", invite_envelope.ur_string());
+        }
+        if self.info {
+            println!("Charter: {}", details.invitation.charter());
+            println!("Min signers: {}", details.invitation.min_signers());
+            if let Some(name) = coordinator_name {
+                println!("Coordinator: {}", name);
             }
-            if self.info {
-                println!("Charter: {}", details.invitation.charter());
-                println!("Min signers: {}", details.invitation.min_signers());
-                if let Some(name) = coordinator_name {
-                    println!("Coordinator: {}", name);
-                }
-                println!("Participants: {}", participant_names.join(", "));
-                println!(
-                    "Reply ARID: {}",
-                    details.invitation.response_arid().ur_string()
-                );
-            }
+            println!("Participants: {}", participant_names.join(", "));
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
+}
+
+fn resolve_invite_envelope(
+    selection: Option<StorageSelection>,
+    invite: &str,
+    timeout: Option<u64>,
+) -> Result<Envelope> {
+    if let Some(selection) = selection {
+        if let Ok(arid) = parse_arid_ur(invite) {
+            let runtime = Runtime::new()?;
+            return runtime.block_on(async move {
+                let client = StorageClient::from_selection(selection).await?;
+                client
+                    .get(&arid, timeout)
+                    .await?
+                    .context("Invite not found in Hubert storage")
+            });
+        }
+        if timeout.is_some() {
+            bail!(
+                "--timeout is only valid when retrieving invites from Hubert"
+            );
+        }
+        return parse_envelope_ur(invite);
+    }
+
+    if parse_arid_ur(invite).is_ok() {
+        bail!(
+            "Hubert storage parameters are required to retrieve invites by ARID"
+        );
+    }
+    parse_envelope_ur(invite)
 }
 
 fn resolve_participants(
@@ -594,15 +621,15 @@ fn build_invite(
 
 struct InviteDetails {
     invitation: DkgInvitation,
-    invitation_envelope: Envelope,
     participants: Vec<XIDDocument>,
 }
 
 fn decode_invite_details(
     invite: Envelope,
     now: Date,
-    expected_sender: XIDDocument,
+    registry: &Registry,
     recipient: &XIDDocument,
+    expected_sender: Option<XIDDocument>,
 ) -> Result<InviteDetails> {
     let recipient_private_keys =
         recipient.inception_private_keys().ok_or_else(|| {
@@ -618,8 +645,24 @@ fn decode_invite_details(
         recipient_private_keys,
     )?;
 
-    if sealed_request.sender().xid() != expected_sender.xid() {
-        bail!("Invite sender does not match expected sender");
+    let sender_document = sealed_request.sender().clone();
+    if let Some(expected) = expected_sender.as_ref() {
+        if sender_document.xid() != expected.xid() {
+            bail!("Invite sender does not match expected sender");
+        }
+    } else {
+        let sender_xid = sender_document.xid();
+        let known_owner = registry
+            .owner()
+            .map(|owner| owner.xid() == sender_xid)
+            .unwrap_or(false);
+        let known_participant = registry.participant(&sender_xid).is_some();
+        if !known_owner && !known_participant {
+            bail!(
+                "Invite sender not found in registry: {}",
+                sender_xid.ur_string()
+            );
+        }
     }
     if sealed_request.request().function() != &Function::from("dkgGroupInvite")
     {
@@ -675,7 +718,7 @@ fn decode_invite_details(
     let invitation = DkgInvitation::from_invite(
         invite.clone(),
         now,
-        &expected_sender,
+        expected_sender.as_ref(),
         recipient,
     )?;
 
@@ -683,11 +726,7 @@ fn decode_invite_details(
         bail!("Invite does not include a response ARID for this recipient");
     }
 
-    Ok(InviteDetails {
-        invitation,
-        invitation_envelope: invite,
-        participants: participant_docs,
-    })
+    Ok(InviteDetails { invitation, participants: participant_docs })
 }
 
 fn participant_names_from_registry(
@@ -890,9 +929,5 @@ fn parse_arid_ur(input: &str) -> Result<ARID> {
 }
 
 fn format_name_with_owner_marker(name: String, is_owner: bool) -> String {
-    if is_owner {
-        format!("* {name}")
-    } else {
-        name
-    }
+    if is_owner { format!("* {name}") } else { name }
 }

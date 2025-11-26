@@ -472,14 +472,14 @@ frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
 
         run_step(
             shell,
-            "Composing Alice's DKG invite (request envelope)",
+            "Composing Alice's unsealed DKG invite",
             f"""
-ALICE_INVITE=$(frost dkg invite compose --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
-echo "${{ALICE_INVITE}}" | envelope format
+ALICE_INVITE_UNSEALED=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --unsealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+echo "${{ALICE_INVITE_UNSEALED}}" | envelope format
 """,
             commentary=(
                 "Create a 2-of-3 DKG invite for Bob, Carol, and Dan (from Alice's registry) "
-                "and format the request envelope to inspect its structure."
+                "as an unsealed envelope UR for auditing."
             ),
         )
 
@@ -487,7 +487,7 @@ echo "${{ALICE_INVITE}}" | envelope format
             shell,
             "Composing Alice's sealed DKG invite",
             f"""
-ALICE_INVITE_SEALED=$(frost dkg invite compose --registry {qp(REGISTRIES["alice"])} --sealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_SEALED=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_SEALED}}" | envelope format
 echo "${{ALICE_INVITE_SEALED}}" | envelope info
 """,
@@ -519,10 +519,10 @@ echo "${{ALICE_INVITE_ARID}}"
 
         run_step(
             shell,
-            "Viewing invite from Hubert as Bob",
+            "Receiving invite from Hubert as Bob",
             f"""
-BOB_INVITE=$(frost dkg invite view --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}" Alice)
-frost dkg invite view --info --no-envelope --storage server --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice
+BOB_INVITE=$(frost dkg invite receive --storage server --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}")
+frost dkg invite receive --info --no-envelope --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
                 "Retrieve the invite from Hubert using Bob's registry (capturing the envelope), "
@@ -532,17 +532,12 @@ frost dkg invite view --info --no-envelope --storage server --registry {qp(REGIS
 
         run_step(
             shell,
-            "Bob responds to the invite (viewing his response envelope)",
+            "Bob responds to the invite",
             f"""
-BOB_RESPONSE_PREVIEW=$(frost dkg invite respond --no-send --print-envelope --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice)
-BOB_RESPONSE_ENVELOPE=$(echo "${{BOB_RESPONSE_PREVIEW}}" | sed -n 's/.*Unsealed: //p')
-echo "${{BOB_RESPONSE_ENVELOPE}}" | envelope format
-BOB_RESPONSE_ARID=$(frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} --envelope "${{BOB_INVITE}}" "${{ALICE_INVITE_ARID}}" Alice | sed -n 's/^Response ARID: //p')
-echo "Response ARID: $BOB_RESPONSE_ARID"
+frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
-                "Bob previews his unsealed response using the cached invite envelope, then sends the sealed response to Hubert. "
-                "Format the unsealed response to see the GSTP response and continuation details before posting."
+                "Post Bob's response to Hubert using the cached invite envelope."
             ),
         )
 
@@ -550,8 +545,8 @@ echo "Response ARID: $BOB_RESPONSE_ARID"
             shell,
             "Carol and Dan respond to the invite",
             f"""
-frost dkg invite respond --storage server --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}" Alice
-frost dkg invite respond --storage server --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}" Alice
+frost dkg invite respond --storage server --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
+frost dkg invite respond --storage server --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
                 "Carol and Dan accept the invite from Hubert using their registries, posting their responses to Hubert."
