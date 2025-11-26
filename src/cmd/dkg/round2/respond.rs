@@ -17,7 +17,9 @@ use tokio::runtime::Runtime;
 
 use super::super::common::{OptionalStorageSelector, parse_arid_ur};
 use crate::{
-    cmd::{registry::participants_file_path, storage::StorageClient},
+    cmd::{
+        is_verbose, registry::participants_file_path, storage::StorageClient,
+    },
     registry::Registry,
 };
 
@@ -38,6 +40,10 @@ pub struct CommandArgs {
     /// Wait up to this many seconds for the request to appear
     #[arg(long = "timeout", value_name = "SECONDS")]
     timeout: Option<u64>,
+
+    /// Also print the unsealed response envelope (for preview/audit)
+    #[arg(long = "unsealed")]
+    unsealed: bool,
 
     /// Group ID to respond to Round 2 for
     #[arg(value_name = "GROUP_ID")]
@@ -89,7 +95,9 @@ impl CommandArgs {
         let round1_secret: frost::keys::dkg::round1::SecretPackage =
             serde_json::from_slice(&fs::read(&round1_secret_path)?)?;
 
-        eprintln!("Fetching Round 2 request from Hubert...");
+        if is_verbose() {
+            eprintln!("Fetching Round 2 request from Hubert...");
+        }
 
         let runtime = Runtime::new()?;
         let client = runtime.block_on(async {
@@ -150,10 +158,15 @@ impl CommandArgs {
         let (round1_packages, round1_packages_by_xid) =
             extract_round1_packages(&sealed_request, &group_record, &owner)?;
 
-        eprintln!(
-            "Received {} Round 1 packages. Running DKG part2...",
-            round1_packages.len()
-        );
+        if is_verbose() {
+            eprintln!(
+                "Received {} Round 1 packages. Running DKG part2...",
+                round1_packages.len()
+            );
+        }
+
+        // Allocate next response ARID for the finalize phase
+        let next_response_arid = ARID::new();
 
         // Run FROST DKG part2
         let (round2_secret, round2_packages) =
@@ -161,37 +174,15 @@ impl CommandArgs {
                 |e| anyhow::anyhow!("FROST DKG part2 failed: {}", e),
             )?;
 
-        eprintln!("Generated {} Round 2 packages.", round2_packages.len());
-
-        // Persist Round 2 secret
-        let round2_secret_path = packages_dir.join("round2_secret.json");
-        fs::write(
-            &round2_secret_path,
-            serde_json::to_vec_pretty(&round2_secret)?,
-        )?;
-
-        // Persist received Round 1 packages for finalize phase
-        let round1_packages_path = packages_dir.join("collected_round1.json");
-        let round1_json: serde_json::Map<String, serde_json::Value> =
-            round1_packages_by_xid
-                .iter()
-                .map(|(xid, package)| {
-                    (
-                        xid.ur_string(),
-                        serde_json::to_value(package)
-                            .expect("Round1 package serializes"),
-                    )
-                })
-                .collect();
-        fs::write(
-            &round1_packages_path,
-            serde_json::to_vec_pretty(&round1_json)?,
-        )?;
+        if is_verbose() {
+            eprintln!("Generated {} Round 2 packages.", round2_packages.len());
+        }
 
         // Build response with Round 2 packages
         let response_body = build_response_body(
             &group_id,
             &owner.xid(),
+            &next_response_arid,
             &round2_packages,
             &group_record,
         )?;
@@ -220,6 +211,42 @@ impl CommandArgs {
         .with_result(response_body)
         .with_peer_continuation(sealed_request.peer_continuation());
 
+        if self.unsealed {
+            // Show the response envelope structure without encryption
+            let unsealed_envelope = sealed_response.to_envelope(
+                None, // No expiration for responses
+                Some(signer_private_keys),
+                None,
+            )?;
+            println!("{}", unsealed_envelope.ur_string());
+            return Ok(());
+        }
+
+        // Persist Round 2 secret
+        let round2_secret_path = packages_dir.join("round2_secret.json");
+        fs::write(
+            &round2_secret_path,
+            serde_json::to_vec_pretty(&round2_secret)?,
+        )?;
+
+        // Persist received Round 1 packages for finalize phase
+        let round1_packages_path = packages_dir.join("collected_round1.json");
+        let round1_json: serde_json::Map<String, serde_json::Value> =
+            round1_packages_by_xid
+                .iter()
+                .map(|(xid, package)| {
+                    (
+                        xid.ur_string(),
+                        serde_json::to_value(package)
+                            .expect("Round1 package serializes"),
+                    )
+                })
+                .collect();
+        fs::write(
+            &round1_packages_path,
+            serde_json::to_vec_pretty(&round1_json)?,
+        )?;
+
         let response_envelope = sealed_response.to_envelope(
             None, // No expiration for responses
             Some(signer_private_keys),
@@ -239,11 +266,16 @@ impl CommandArgs {
         contributions.round2_secret =
             Some(round2_secret_path.to_string_lossy().to_string());
         group_record.set_contributions(contributions);
-        // Clear listening ARID since we've received Round 2
-        group_record.clear_listening_at_arid();
+        // Set new listening ARID for finalize phase
+        group_record.set_listening_at_arid(next_response_arid);
         registry.save(&registry_path)?;
 
-        eprintln!("Posted Round 2 response to {}", response_arid.ur_string());
+        if is_verbose() {
+            eprintln!(
+                "Posted Round 2 response to {}",
+                response_arid.ur_string()
+            );
+        }
 
         Ok(())
     }
@@ -333,6 +365,7 @@ fn extract_round1_packages(
 fn build_response_body(
     group_id: &ARID,
     participant_xid: &XID,
+    response_arid: &ARID,
     round2_packages: &BTreeMap<Identifier, frost::keys::dkg::round2::Package>,
     group_record: &crate::registry::GroupRecord,
 ) -> Result<Envelope> {
@@ -361,7 +394,8 @@ fn build_response_body(
 
     let mut envelope = Envelope::new("dkgRound2Response")
         .add_assertion("group", *group_id)
-        .add_assertion("participant", *participant_xid);
+        .add_assertion("participant", *participant_xid)
+        .add_assertion("response_arid", *response_arid);
 
     // Add each Round 2 package with the recipient's XID
     for (identifier, package) in round2_packages {

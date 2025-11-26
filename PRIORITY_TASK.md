@@ -19,6 +19,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
 
 4. **DKG Round 2** (`frost dkg round2`)
    - `send`: Coordinator sends individual sealed messages to each participant containing all Round 1 packages and their unique response ARID (posts to ARIDs participants specified in their invite responses)
+   - `respond`: Participants now respond (implemented) with round2 packages, persist round2 secret, include next `response_arid`, and update `listening_at_arid`
 
 5. **Storage Backends**
    - Hubert server (HTTP)
@@ -35,35 +36,26 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
 
 ## Where the Demo Stops
 
-The `demo-log.md` ends after the coordinator (Alice) sends the Round 2 request to Hubert. Each participant has their own directory with:
-- `registry.json` - Their registry with group membership and pending_requests (Round 2)
-- `group-state/<group-id>/round1_secret.json` - Their Round 1 secret (participants only)
-- `group-state/<group-id>/round1_package.json` - Their Round 1 package (participants only)
+The `demo-log.md` now runs through participants responding to Round 2 (including unsealed preview) and posting to Hubert. Each participant has:
+- `registry.json` - Group membership, pending_requests (Round 2), updated `listening_at_arid` for finalize
+- `group-state/<group-id>/round1_secret.json` - Round 1 secret (participants only)
+- `group-state/<group-id>/round1_package.json` - Round 1 package (participants only)
 - `group-state/<group-id>/collected_round1.json` - All Round 1 packages (coordinator only)
+- `group-state/<group-id>/round2_secret.json` - Round 2 secret (participants only)
 
 ## Next Steps (Priority Order)
 
-### 1. Participants Complete Round 2
+### 1. Coordinator Collects Round 2
 
-**Command:** `frost dkg round2 respond`
-
-Each participant:
-- Fetches Round 2 request from Hubert
-- Runs `frost_ed25519::keys::dkg::part2` with their Round 1 secret and all Round 1 packages
-- Generates Round 2 packages (one per other participant)
-- Persists `round2_secret.json`
-- Posts encrypted Round 2 packages back to coordinator
-
-### 2. Coordinator Collects Round 2
-
-**Command:** `frost dkg round2 collect`
+**Command (to implement):** `frost dkg round2 collect`
 
 The coordinator:
-- Fetches all Round 2 responses from Hubert
-- Validates each response
+- Fetches all Round 2 responses from Hubert (using `collect_from_arid` from pending_requests)
+- Validates each response (function, group, recipient, etc.)
 - Saves collected Round 2 packages to `collected_round2.json`
+- Updates pending_requests for finalize fan-out (send_to/collect_from)
 
-### 3. Coordinator Distributes Round 2 Packages
+### 2. Coordinator Distributes Round 2 Packages
 
 **Command:** `frost dkg finalize send`
 
@@ -71,7 +63,7 @@ The coordinator:
 - Redistributes each participant's incoming Round 2 packages to them
 - Each participant receives only the packages destined for them
 
-### 4. Participants Finalize Key Generation
+### 3. Participants Finalize Key Generation
 
 **Command:** `frost dkg finalize respond`
 
@@ -100,20 +92,20 @@ Once key generation is complete:
 
 ### GroupRecord Enhancements
 
-The `ContributionPaths` structure is ready for Round 2:
+The `ContributionPaths` structure now used for Round 2:
 ```rust
 pub struct ContributionPaths {
     pub round1_secret: Option<String>,
     pub round1_package: Option<String>,
-    pub round2_secret: Option<String>,  // Ready but unused
-    pub key_package: Option<String>,    // Ready but unused
+    pub round2_secret: Option<String>,  // Populated during round2 respond
+    pub key_package: Option<String>,    // Ready for finalize
 }
 ```
 
-The `PendingRequests` structure tracks response ARIDs:
+The `PendingRequests` structure tracks response ARIDs across phases:
 ```rust
 pub struct PendingRequests {
-    requests: Vec<PendingRequest>,  // Maps participant XID to response ARID
+    requests: Vec<PendingRequest>,  // Maps participant XID to send_to / collect_from
 }
 ```
 
@@ -134,7 +126,8 @@ Add integration tests for:
 
 ### Demo Script Updates
 
-After implementing each phase, extend `frost-demo.py` to demonstrate the full flow from invite through signing.
+- Demo now includes unsealed Round 2 response preview (no state change) followed by sealed post with `--verbose` for Hubert interactions.
+- After implementing subsequent phases, extend `frost-demo.py` to cover round2 collect, finalize send/respond, and signing.
 
 ## Lower Priority Enhancements
 

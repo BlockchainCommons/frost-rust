@@ -510,7 +510,7 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
         run_step(
             shell,
             "Checking Hubert server availability",
-            "frost check --storage $STORAGE",
+            "frost check --verbose --storage $STORAGE",
             "Verify the local Hubert server is responding before publishing the invite.",
         )
 
@@ -569,7 +569,7 @@ echo "${{BOB_RESPONSE_SEALED}}" | envelope format
             shell,
             "Bob responds to the invite",
             f"""
-frost dkg invite respond --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
+frost dkg invite respond --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
                 "Post Bob's sealed response to Hubert using the cached invite envelope."
@@ -580,8 +580,8 @@ frost dkg invite respond --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "
             shell,
             "Carol and Dan respond to the invite",
             f"""
-frost dkg invite respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
-frost dkg invite respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
+frost dkg invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
+frost dkg invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
                 "Carol and Dan accept the invite from Hubert using their registries, posting their responses to Hubert."
@@ -609,7 +609,7 @@ ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
 echo "Group ID: ${{ALICE_GROUP_ID}}"
 
 # Collect Round 1 responses from all participants
-frost dkg round1 collect --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg round1 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "As coordinator, Alice fetches each participant's sealed response from Hubert, "
@@ -673,7 +673,7 @@ echo "${{ROUND2_UNSEALED}}" | envelope format
             shell,
             "Alice sends individual Round 2 requests to each participant",
             f"""
-frost dkg round2 send --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg round2 send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "Alice posts a separate sealed Round 2 request for each participant to Hubert. "
@@ -702,12 +702,24 @@ jq '.groups' {qp(REGISTRIES["alice"])}
             "Bob responds to Round 2 request",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
+frost dkg round2 respond --unsealed --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
 """,
             commentary=(
                 "Bob fetches the Round 2 request, runs FROST DKG part2 "
                 "with his Round 1 secret and all Round 1 packages, generates Round 2 packages, "
-                "and posts the response back to the coordinator."
+                "and prints the unsealed response envelope structure (preview only, no post)."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Bob posts Round 2 response",
+            f"""
+BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
+frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
+""",
+            commentary=(
+                "Bob posts the sealed Round 2 response to the coordinator (no unsealed output)."
             ),
         )
 
@@ -716,7 +728,7 @@ frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(RE
             "Carol responds to Round 2 request",
             f"""
 CAROL_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["carol"])})
-frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
+frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
 """,
             commentary=(
                 "Carol processes the Round 2 request with her Round 1 secret and all Round 1 packages, "
@@ -729,7 +741,7 @@ frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(RE
             "Dan responds to Round 2 request",
             f"""
 DAN_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["dan"])})
-frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
+frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
 """,
             commentary=(
                 "Dan processes the Round 2 request with his Round 1 secret and all Round 1 packages, "

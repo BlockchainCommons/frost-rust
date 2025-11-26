@@ -15,7 +15,9 @@ use tokio::runtime::Runtime;
 
 use super::super::common::OptionalStorageSelector;
 use crate::{
-    cmd::{registry::participants_file_path, storage::StorageClient},
+    cmd::{
+        is_verbose, registry::participants_file_path, storage::StorageClient,
+    },
     registry::{PendingRequests, Registry},
 };
 
@@ -164,10 +166,12 @@ impl CommandArgs {
                 StorageClient::from_selection(selection).await
             })?;
 
-            eprintln!(
-                "Sending Round 2 requests to {} participants...",
-                participant_info.len()
-            );
+            if is_verbose() {
+                eprintln!(
+                    "Sending Round 2 requests to {} participants...",
+                    participant_info.len()
+                );
+            }
 
             for (xid, recipient_doc, send_to_arid, collect_from_arid) in
                 &participant_info
@@ -177,7 +181,9 @@ impl CommandArgs {
                     .and_then(|r| r.pet_name().map(|s| s.to_owned()))
                     .unwrap_or_else(|| xid.ur_string());
 
-                eprint!("  {} ... ", participant_name);
+                if is_verbose() {
+                    eprint!("  {} ... ", participant_name);
+                }
 
                 let request = build_round2_request_for_participant(
                     coordinator_doc,
@@ -198,7 +204,9 @@ impl CommandArgs {
                     client.put(send_to_arid, &sealed_envelope).await
                 })?;
 
-                eprintln!("ok");
+                if is_verbose() {
+                    eprintln!("ok");
+                }
             }
 
             // Update group record with pending_requests for Round 2 collection
@@ -208,8 +216,10 @@ impl CommandArgs {
             group_record.set_pending_requests(new_pending_requests);
             registry.save(&registry_path)?;
 
-            eprintln!();
-            eprintln!("Sent {} Round 2 requests.", participant_info.len());
+            if is_verbose() {
+                eprintln!();
+                eprintln!("Sent {} Round 2 requests.", participant_info.len());
+            }
         } else if self.unsealed {
             // Show a single unsealed request (for preview purposes)
             let (_, _, _, collect_from_arid) = &participant_info[0];

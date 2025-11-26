@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -10,6 +12,10 @@ pub mod storage;
 #[derive(Debug, Parser)]
 #[command(author, version, about = "FROST command line toolkit")]
 pub struct Cli {
+    /// Enable verbose output for hubert interactions and progress messages
+    #[arg(long, global = true)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -26,6 +32,7 @@ enum Commands {
 
 impl Cli {
     pub fn exec(self) -> Result<()> {
+        set_verbose(self.verbose);
         match self.command {
             Commands::Registry(args) => args.exec(),
             Commands::Check(args) => args.exec(),
@@ -33,3 +40,9 @@ impl Cli {
         }
     }
 }
+
+static VERBOSE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_verbose(value: bool) { VERBOSE.store(value, Ordering::Relaxed); }
+
+pub fn is_verbose() -> bool { VERBOSE.load(Ordering::Relaxed) }

@@ -14,7 +14,9 @@ use tokio::runtime::Runtime;
 
 use super::super::common::{OptionalStorageSelector, parse_arid_ur};
 use crate::{
-    cmd::{registry::participants_file_path, storage::StorageClient},
+    cmd::{
+        is_verbose, registry::participants_file_path, storage::StorageClient,
+    },
     registry::{PendingRequests, Registry},
 };
 
@@ -82,10 +84,12 @@ impl CommandArgs {
             );
         }
 
-        eprintln!(
-            "Collecting Round 1 responses from {} participants...",
-            pending_requests.len()
-        );
+        if is_verbose() {
+            eprintln!(
+                "Collecting Round 1 responses from {} participants...",
+                pending_requests.len()
+            );
+        }
 
         let mut round1_packages: Vec<(XID, frost::keys::dkg::round1::Package)> =
             Vec::new();
@@ -110,7 +114,9 @@ impl CommandArgs {
                 })
                 .unwrap_or_else(|| participant_xid.ur_string());
 
-            eprint!("  {} ... ", participant_name);
+            if is_verbose() {
+                eprint!("  {} ... ", participant_name);
+            }
 
             match fetch_and_validate_response(
                 &runtime,
@@ -121,7 +127,9 @@ impl CommandArgs {
                 &group_id,
             ) {
                 Ok((package, next_arid)) => {
-                    eprintln!("ok");
+                    if is_verbose() {
+                        eprintln!("ok");
+                    }
                     round1_packages.push((*participant_xid, package));
                     next_response_arids.push((*participant_xid, next_arid));
                 }
@@ -133,8 +141,13 @@ impl CommandArgs {
         }
 
         if !errors.is_empty() {
-            eprintln!();
-            eprintln!("Failed to collect from {} participants:", errors.len());
+            if is_verbose() {
+                eprintln!();
+                eprintln!(
+                    "Failed to collect from {} participants:",
+                    errors.len()
+                );
+            }
             for (xid, error) in &errors {
                 eprintln!("  {}: {}", xid.ur_string(), error);
             }
@@ -191,12 +204,17 @@ impl CommandArgs {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| round1_packages_path.clone());
 
-        eprintln!();
-        eprintln!(
-            "Collected {} Round 1 packages. Saved to {}",
-            round1_packages.len(),
-            display_path.display()
-        );
+        if is_verbose() {
+            eprintln!();
+            eprintln!(
+                "Collected {} Round 1 packages. Saved to {}",
+                round1_packages.len(),
+                display_path.display()
+            );
+        } else {
+            // Still provide path in non-verbose mode
+            println!("{}", display_path.display());
+        }
 
         Ok(())
     }

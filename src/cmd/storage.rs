@@ -7,6 +7,8 @@ use hubert::{
     server::ServerKvClient,
 };
 
+use super::is_verbose;
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 #[doc(hidden)]
 pub enum StorageBackend {
@@ -109,16 +111,16 @@ impl StorageClient {
     ) -> Result<String> {
         match self {
             StorageClient::Mainline(store) => {
-                store.put(arid, envelope, None, false).await
+                store.put(arid, envelope, None, is_verbose()).await
             }
             StorageClient::Ipfs(store) => {
-                store.put(arid, envelope, None, false).await
+                store.put(arid, envelope, None, is_verbose()).await
             }
             StorageClient::Hybrid(store) => {
-                store.put(arid, envelope, None, false).await
+                store.put(arid, envelope, None, is_verbose()).await
             }
             StorageClient::Server(store) => {
-                store.put(arid, envelope, None, false).await
+                store.put(arid, envelope, None, is_verbose()).await
             }
         }
         .map_err(|err| anyhow!(err))
@@ -131,16 +133,16 @@ impl StorageClient {
     ) -> Result<Option<Envelope>> {
         match self {
             StorageClient::Mainline(store) => {
-                store.get(arid, timeout_seconds, false).await
+                store.get(arid, timeout_seconds, is_verbose()).await
             }
             StorageClient::Ipfs(store) => {
-                store.get(arid, timeout_seconds, false).await
+                store.get(arid, timeout_seconds, is_verbose()).await
             }
             StorageClient::Hybrid(store) => {
-                store.get(arid, timeout_seconds, false).await
+                store.get(arid, timeout_seconds, is_verbose()).await
             }
             StorageClient::Server(store) => {
-                store.get(arid, timeout_seconds, false).await
+                store.get(arid, timeout_seconds, is_verbose()).await
             }
         }
         .map_err(|err| anyhow!(err))
