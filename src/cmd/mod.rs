@@ -1,35 +1,27 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-#[doc(hidden)]
 pub mod check;
-#[doc(hidden)]
 pub mod dkg;
-#[doc(hidden)]
-pub mod dkg_cli;
-#[doc(hidden)]
 pub mod registry;
-#[doc(hidden)]
 pub mod storage;
 
 /// FROST command-line interface definition.
 #[derive(Debug, Parser)]
 #[command(author, version, about = "FROST command line toolkit")]
-#[doc(hidden)]
 pub struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Debug, Subcommand)]
-#[doc(hidden)]
 enum Commands {
     /// Manage the FROST registry
     Registry(registry::CommandArgs),
     /// Check Hubert storage backend availability
     Check(check::CommandArgs),
     /// Distributed key generation operations
-    Dkg(dkg_cli::CommandArgs),
+    Dkg(dkg::CommandArgs),
 }
 
 impl Cli {
