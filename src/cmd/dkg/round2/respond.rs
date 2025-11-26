@@ -41,9 +41,9 @@ pub struct CommandArgs {
     #[arg(long = "timeout", value_name = "SECONDS")]
     timeout: Option<u64>,
 
-    /// Also print the unsealed response envelope (for preview/audit)
-    #[arg(long = "unsealed")]
-    unsealed: bool,
+    /// Also print the preview response envelope (no post / no state)
+    #[arg(long = "preview")]
+    preview: bool,
 
     /// Group ID to respond to Round 2 for
     #[arg(value_name = "GROUP_ID")]
@@ -211,7 +211,7 @@ impl CommandArgs {
         .with_result(response_body)
         .with_peer_continuation(sealed_request.peer_continuation());
 
-        if self.unsealed {
+        if self.preview {
             // Show the response envelope structure without encryption
             let unsealed_envelope = sealed_response.to_envelope(
                 None, // No expiration for responses

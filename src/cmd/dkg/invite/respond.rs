@@ -50,10 +50,10 @@ pub struct CommandArgs {
     #[arg(long = "response-arid", value_name = "UR:ARID")]
     response_arid: Option<String>,
 
-    /// Print the unsealed response envelope UR instead of the sealed envelope
+    /// Print the preview response envelope UR instead of the sealed envelope
     /// (local-only)
-    #[arg(long = "unsealed")]
-    unsealed: bool,
+    #[arg(long = "preview")]
+    preview: bool,
 
     /// Reject the invite with the provided reason (accepts by default)
     #[arg(long = "reject", value_name = "REASON")]
@@ -75,8 +75,8 @@ impl CommandArgs {
         if selection.is_none() && self.timeout.is_some() {
             bail!("--timeout requires Hubert storage parameters");
         }
-        if selection.is_some() && self.unsealed {
-            bail!("--unsealed cannot be used with Hubert storage options");
+        if selection.is_some() && self.preview {
+            bail!("--preview cannot be used with Hubert storage options");
         }
         let registry_path = participants_file_path(self.registry.clone())?;
         let mut registry =
@@ -238,7 +238,7 @@ impl CommandArgs {
                 client.put(&response_target, &envelope_to_send).await?;
                 Ok::<(), anyhow::Error>(())
             })?;
-        } else if self.unsealed {
+        } else if self.preview {
             // Show the GSTP response structure without encryption
             let unsealed_envelope =
                 sealed.to_envelope(None, Some(signer_private_keys), None)?;

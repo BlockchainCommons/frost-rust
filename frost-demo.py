@@ -482,14 +482,14 @@ frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
 
         run_step(
             shell,
-            "Composing Alice's unsealed DKG invite",
+            "Composing Alice's preview DKG invite",
             f"""
-ALICE_INVITE_UNSEALED=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --unsealed --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
-echo "${{ALICE_INVITE_UNSEALED}}" | envelope format
+ALICE_INVITE_PREVIEW=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --preview --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+echo "${{ALICE_INVITE_PREVIEW}}" | envelope format
 """,
             commentary=(
                 "Create a 2-of-3 DKG invite for Bob, Carol, and Dan (from Alice's registry) "
-                "as an unsealed envelope UR for auditing."
+                "as a preview envelope UR for auditing."
             ),
         )
 
@@ -542,13 +542,13 @@ frost dkg invite receive --info --no-envelope --registry {qp(REGISTRIES["bob"])}
 
         run_step(
             shell,
-            "Composing Bob's unsealed invite response",
+            "Composing Bob's preview invite response",
             f"""
-BOB_RESPONSE_UNSEALED=$(frost dkg invite respond --unsealed --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
-echo "${{BOB_RESPONSE_UNSEALED}}" | envelope format
+BOB_RESPONSE_PREVIEW=$(frost dkg invite respond --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
+echo "${{BOB_RESPONSE_PREVIEW}}" | envelope format
 """,
             commentary=(
-                "Preview the unsealed response envelope structure before posting. "
+                "Preview the response envelope structure before posting. "
                 "This shows the DKG Round 1 package and group metadata."
             ),
         )
@@ -657,10 +657,10 @@ jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round1.json
 
         run_step(
             shell,
-            "Alice composes an unsealed Round 2 request (preview)",
+            "Alice composes a preview Round 2 request",
             f"""
-ROUND2_UNSEALED=$(frost dkg round2 send --unsealed --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
-echo "${{ROUND2_UNSEALED}}" | envelope format
+ROUND2_PREVIEW=$(frost dkg round2 send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
+echo "${{ROUND2_PREVIEW}}" | envelope format
 """,
             commentary=(
                 "Preview one of the Round 2 requests (for the first participant). "
@@ -702,12 +702,12 @@ jq '.groups' {qp(REGISTRIES["alice"])}
             "Bob responds to Round 2 request",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg round2 respond --unsealed --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
+frost dkg round2 respond --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
 """,
             commentary=(
                 "Bob fetches the Round 2 request, runs FROST DKG part2 "
                 "with his Round 1 secret and all Round 1 packages, generates Round 2 packages, "
-                "and prints the unsealed response envelope structure (preview only, no post)."
+                "and prints the preview response envelope structure (no post)."
             ),
         )
 
@@ -719,7 +719,7 @@ BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
 frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
 """,
             commentary=(
-                "Bob posts the sealed Round 2 response to the coordinator (no unsealed output)."
+                "Bob posts the sealed Round 2 response to the coordinator (no preview output)."
             ),
         )
 

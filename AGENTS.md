@@ -2,6 +2,10 @@
 
 Always read this *entire* file before working in this crate.
 
+## General Guidelines
+
+- This crate is unreleased *de novo* development. Don't concern yourself with backward compatibility yet.
+
 ## Relevant Crates in This Workspace
 
 - `bc-components`: Blockchain Commons Cryptographic Components
@@ -43,9 +47,9 @@ Always read this *entire* file before working in this crate.
   - `collect_from_arid`: coordinator records where to fetch a participant’s response.
   - `listening_at_arid`: local state for where *you* are listening next.
 - Verbosity: use `--verbose` only when you want Hubert transfer logs; keep previews quiet.
-- Previews: use `--unsealed` and pipe to `envelope format`; previews must not mutate local state or post to storage.
+- Previews: use `--preview` and pipe to `envelope format`; previews must not mutate local state or post to storage.
 - Payload routing modes (transport-level concerns):
-  - Multicast preview/audit (e.g., unsealed invite): everyone can view the message, but per-recipient fields like response ARIDs must be individually encrypted under a `recipient` assertion on the inner assertion so other participants cannot see them.
+- Multicast preview/audit (e.g., preview invite): everyone can view the message, but per-recipient fields like response ARIDs must be individually encrypted under a `recipient` assertion on the inner assertion so other participants cannot see them.
   - Single-cast deliveries (e.g., Round 2 per-participant messages): the whole message is encrypted to one recipient; when wrapping per-recipient payloads, add a `recipient` assertion to the wrapped byte string so the coordinator can fan out later, but the payload itself stays inside the single-recipient envelope.
 
 ## Essential GSTP Knowledge (message encoding)

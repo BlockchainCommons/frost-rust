@@ -110,10 +110,10 @@ pub struct InviteRespondArgs {
     #[arg(long = "response-arid", value_name = "UR:ARID")]
     response_arid: Option<String>,
 
-    /// Print the unsealed response envelope UR instead of the sealed envelope
+    /// Print the preview response envelope UR instead of the sealed envelope
     /// (local-only)
-    #[arg(long = "unsealed")]
-    unsealed: bool,
+    #[arg(long = "preview")]
+    preview: bool,
 
     /// Reject the invite with the provided reason (accepts by default)
     #[arg(long = "reject", value_name = "REASON")]
@@ -135,8 +135,8 @@ impl InviteRespondArgs {
         if selection.is_none() && self.timeout.is_some() {
             bail!("--timeout requires Hubert storage parameters");
         }
-        if selection.is_some() && self.unsealed {
-            bail!("--unsealed cannot be used with Hubert storage options");
+        if selection.is_some() && self.preview {
+            bail!("--preview cannot be used with Hubert storage options");
         }
         let registry_path = participants_file_path(self.registry.clone())?;
         let mut registry =
@@ -273,7 +273,7 @@ impl InviteRespondArgs {
                 client.put(&response_target, &envelope_to_send).await?;
                 Ok::<(), anyhow::Error>(())
             })?;
-        } else if self.unsealed {
+        } else if self.preview {
             // Show the GSTP response structure without encryption
             let unsealed_envelope =
                 sealed.to_envelope(None, Some(signer_private_keys), None)?;
@@ -337,9 +337,9 @@ pub struct InviteSendArgs {
     #[arg(long = "charter", value_name = "STRING", default_value = "")]
     charter: String,
 
-    /// Print the unsealed invite envelope UR instead of the sealed envelope
-    #[arg(long = "unsealed")]
-    unsealed: bool,
+    /// Print the preview invite envelope UR instead of the sealed envelope
+    #[arg(long = "preview")]
+    preview: bool,
 
     /// Participants to include, by pet name or ur:xid identifier
     #[arg(required = true, value_name = "PARTICIPANT")]
@@ -349,8 +349,8 @@ pub struct InviteSendArgs {
 impl InviteSendArgs {
     pub fn exec(self) -> Result<()> {
         let selection = self.storage.resolve()?;
-        if selection.is_some() && self.unsealed {
-            bail!("--unsealed cannot be used with Hubert storage options");
+        if selection.is_some() && self.preview {
+            bail!("--preview cannot be used with Hubert storage options");
         }
 
         let invite = build_invite(
@@ -372,7 +372,7 @@ impl InviteSendArgs {
             })?;
 
             println!("{}", arid.ur_string());
-        } else if self.unsealed {
+        } else if self.preview {
             let envelope = invite.to_unsealed_envelope()?;
             println!("{}", envelope.ur_string());
         } else {

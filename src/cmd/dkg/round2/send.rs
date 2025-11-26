@@ -36,9 +36,9 @@ pub struct CommandArgs {
     #[arg(long = "registry", value_name = "PATH")]
     registry: Option<String>,
 
-    /// Print the unsealed request envelope UR instead of sending
-    #[arg(long = "unsealed")]
-    unsealed: bool,
+    /// Print the preview request envelope UR instead of sending
+    #[arg(long = "preview")]
+    preview: bool,
 
     /// Group ID to send Round 2 requests for
     #[arg(value_name = "GROUP_ID")]
@@ -48,8 +48,8 @@ pub struct CommandArgs {
 impl CommandArgs {
     pub fn exec(self) -> Result<()> {
         let selection = self.storage.resolve()?;
-        if selection.is_some() && self.unsealed {
-            bail!("--unsealed cannot be used with Hubert storage options");
+        if selection.is_some() && self.preview {
+            bail!("--preview cannot be used with Hubert storage options");
         }
 
         let registry_path = participants_file_path(self.registry.clone())?;
@@ -220,8 +220,8 @@ impl CommandArgs {
                 eprintln!();
                 eprintln!("Sent {} Round 2 requests.", participant_info.len());
             }
-        } else if self.unsealed {
-            // Show a single unsealed request (for preview purposes)
+        } else if self.preview {
+            // Show a single preview request (signed, not encrypted)
             let (_, _, _, collect_from_arid) = &participant_info[0];
             let request = build_round2_request_for_participant(
                 coordinator_doc,

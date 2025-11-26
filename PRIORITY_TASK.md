@@ -10,7 +10,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Persistent JSON storage
 
 2. **DKG Invite Flow** (`frost dkg invite`)
-   - `send`: Coordinator creates sealed/unsealed invites for participants
+   - `send`: Coordinator creates sealed/preview invites for participants
    - `receive`: Participants fetch and decrypt invites from Hubert or local envelope
    - `respond`: Participants accept or reject, posting response to Hubert
 
@@ -36,7 +36,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
 
 ## Where the Demo Stops
 
-The `demo-log.md` now runs through participants responding to Round 2 (including unsealed preview) and posting to Hubert. Each participant has:
+The `demo-log.md` now runs through participants responding to Round 2 (including preview) and posting to Hubert. Each participant has:
 - `registry.json` - Group membership, pending_requests (Round 2), updated `listening_at_arid` for finalize
 - `group-state/<group-id>/round1_secret.json` - Round 1 secret (participants only)
 - `group-state/<group-id>/round1_package.json` - Round 1 package (participants only)
@@ -126,7 +126,7 @@ Add integration tests for:
 
 ### Demo Script Updates
 
-- Demo now includes unsealed Round 2 response preview (no state change) followed by sealed post with `--verbose` for Hubert interactions.
+- Demo now includes preview Round 2 response (no state change) followed by sealed post with `--verbose` for Hubert interactions.
 - After implementing subsequent phases, extend `frost-demo.py` to cover round2 collect, finalize send/respond, and signing.
 
 ## Lower Priority Enhancements
