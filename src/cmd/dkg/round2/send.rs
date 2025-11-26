@@ -119,9 +119,9 @@ impl CommandArgs {
         let valid_until =
             Date::with_duration_from_now(Duration::from_secs(60 * 60));
 
-        // Get pending_requests which contains the request ARIDs from Round 1
-        // responses (These are the ARIDs where participants told us to
-        // post Round 2 requests)
+        // Get pending_requests which contains the send_to ARIDs from Round 1
+        // collect. These are where participants told us to post Round 2
+        // requests.
         let pending_requests = group_record.pending_requests();
         if pending_requests.is_empty() {
             bail!(
@@ -130,14 +130,14 @@ impl CommandArgs {
             );
         }
 
-        // Build participant info: (XID, XIDDocument, request_arid,
-        // response_arid) request_arid = where we post (from Round 1
-        // response) response_arid = where they post their Round 2
-        // response (new)
+        // Build participant info: (XID, XIDDocument, send_to_arid,
+        // collect_from_arid) send_to_arid = where we post Round 2
+        // request (participant's listening ARID) collect_from_arid =
+        // where we'll collect their Round 2 response (new ARID)
         let participant_info: Vec<(XID, XIDDocument, ARID, ARID)> =
             pending_requests
-                .iter()
-                .map(|(xid, request_arid)| {
+                .iter_send()
+                .map(|(xid, send_to_arid)| {
                     let doc = registry
                         .participant(xid)
                         .map(|r| r.xid_document().clone())
@@ -147,15 +147,15 @@ impl CommandArgs {
                                 xid.ur_string()
                             )
                         })?;
-                    let response_arid = ARID::new(); // Where they post their Round 2 response
-                    Ok((*xid, doc, *request_arid, response_arid))
+                    let collect_from_arid = ARID::new(); // Where we'll collect their Round 2 response
+                    Ok((*xid, doc, *send_to_arid, collect_from_arid))
                 })
                 .collect::<Result<Vec<_>>>()?;
 
         // Build new pending_requests for Round 2 collection
         let mut new_pending_requests = PendingRequests::new();
-        for (xid, _, _, response_arid) in &participant_info {
-            new_pending_requests.add(*xid, *response_arid);
+        for (xid, _, _, collect_from_arid) in &participant_info {
+            new_pending_requests.add_collect_only(*xid, *collect_from_arid);
         }
 
         if let Some(selection) = selection {
@@ -169,7 +169,7 @@ impl CommandArgs {
                 participant_info.len()
             );
 
-            for (xid, recipient_doc, request_arid, response_arid) in
+            for (xid, recipient_doc, send_to_arid, collect_from_arid) in
                 &participant_info
             {
                 let participant_name = registry
@@ -183,7 +183,8 @@ impl CommandArgs {
                     coordinator_doc,
                     &group_id,
                     &round1_packages,
-                    *response_arid,
+                    *collect_from_arid, /* Tell participant where to post
+                                         * their response */
                 )?;
 
                 let sealed_envelope = request.to_envelope_for_recipients(
@@ -192,8 +193,9 @@ impl CommandArgs {
                     &[recipient_doc],
                 )?;
 
+                // Post to participant's listening ARID
                 runtime.block_on(async {
-                    client.put(request_arid, &sealed_envelope).await
+                    client.put(send_to_arid, &sealed_envelope).await
                 })?;
 
                 eprintln!("ok");
@@ -210,12 +212,12 @@ impl CommandArgs {
             eprintln!("Sent {} Round 2 requests.", participant_info.len());
         } else if self.unsealed {
             // Show a single unsealed request (for preview purposes)
-            let (_, _, _, response_arid) = &participant_info[0];
+            let (_, _, _, collect_from_arid) = &participant_info[0];
             let request = build_round2_request_for_participant(
                 coordinator_doc,
                 &group_id,
                 &round1_packages,
-                *response_arid,
+                *collect_from_arid,
             )?;
 
             let unsealed_envelope = request.to_envelope(
@@ -226,7 +228,8 @@ impl CommandArgs {
             println!("{}", unsealed_envelope.ur_string());
         } else {
             // Sealed but not sent - show each participant's sealed envelope
-            for (xid, recipient_doc, _, response_arid) in &participant_info {
+            for (xid, recipient_doc, _, collect_from_arid) in &participant_info
+            {
                 let participant_name = registry
                     .participant(xid)
                     .and_then(|r| r.pet_name().map(|s| s.to_owned()))
@@ -236,7 +239,7 @@ impl CommandArgs {
                     coordinator_doc,
                     &group_id,
                     &round1_packages,
-                    *response_arid,
+                    *collect_from_arid,
                 )?;
 
                 let sealed_envelope = request.to_envelope_for_recipients(
@@ -255,7 +258,8 @@ impl CommandArgs {
 }
 
 /// Build a Round 2 request for a specific participant.
-/// Each participant gets the same Round 1 packages but their own response ARID.
+/// Each participant gets the same Round 1 packages but their own response ARID
+/// (where to post their Round 2 response).
 fn build_round2_request_for_participant(
     sender: &XIDDocument,
     group_id: &ARID,

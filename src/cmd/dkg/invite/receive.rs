@@ -6,17 +6,18 @@ use clap::Parser;
 use gstp::{SealedRequest, SealedRequestBehavior};
 use tokio::runtime::Runtime;
 
-use crate::{
-    DkgInvitation,
-    cmd::registry::participants_file_path,
-    registry::Registry,
-};
-
 use super::common::{
     OptionalStorageSelector, parse_arid_ur, parse_envelope_ur,
     participant_names_from_registry, resolve_sender, resolve_sender_name,
 };
-use crate::cmd::storage::{StorageClient, StorageSelection};
+use crate::{
+    DkgInvitation,
+    cmd::{
+        registry::participants_file_path,
+        storage::{StorageClient, StorageSelection},
+    },
+    registry::Registry,
+};
 
 /// Retrieve or inspect a DKG invite.
 #[derive(Debug, Parser)]

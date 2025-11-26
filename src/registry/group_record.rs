@@ -52,9 +52,19 @@ impl ContributionPaths {
     }
 }
 
-/// Tracks pending responses expected from participants (coordinator-side).
-/// Maps participant XID to the ARIDs for request (where they fetch) and
-/// response (where they post).
+/// Tracks pending communication with participants (coordinator-side).
+///
+/// After each phase, the coordinator stores:
+/// - `send_to_arid`: Where to POST the next request to this participant
+/// - `collect_from_arid`: Where to GET this participant's response
+///
+/// The flow is:
+/// 1. After invite send: collect_from_arid = where participant will post invite
+///    response
+/// 2. After round1 collect: send_to_arid = where participant wants Round 2
+///    request
+/// 3. After round2 send: collect_from_arid = where participant will post Round
+///    2 response
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct PendingRequests {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -65,62 +75,107 @@ pub struct PendingRequests {
 struct PendingRequest {
     #[serde(with = "super::group_record::serde_xid")]
     participant: XID,
-    /// Where the coordinator posts the request (participant fetches from here)
+    /// Where to POST the next request to this participant (their listening
+    /// ARID)
     #[serde(
         default,
         with = "serde_option_arid",
         skip_serializing_if = "Option::is_none"
     )]
-    request_arid: Option<bc_components::ARID>,
-    /// Where the participant posts their response (coordinator fetches from
-    /// here)
+    send_to_arid: Option<bc_components::ARID>,
+    /// Where to GET this participant's response (coordinator's collection
+    /// ARID)
     #[serde(with = "serde_arid")]
-    response_arid: bc_components::ARID,
+    collect_from_arid: bc_components::ARID,
 }
 
 impl PendingRequests {
     pub fn new() -> Self { Self { requests: Vec::new() } }
 
-    pub fn add(
+    /// Add a pending request where we only know where to collect from.
+    /// Used after invite send (we'll collect invite responses from these
+    /// ARIDs).
+    pub fn add_collect_only(
         &mut self,
         participant: XID,
-        response_arid: bc_components::ARID,
+        collect_from_arid: bc_components::ARID,
     ) {
         self.requests.push(PendingRequest {
             participant,
-            request_arid: None,
-            response_arid,
+            send_to_arid: None,
+            collect_from_arid,
         });
     }
 
-    pub fn add_with_request(
+    /// Add a pending request where we know where to send AND where to collect.
+    /// Used after round2 send (we send to their ARID, collect from our ARID).
+    pub fn add_send_and_collect(
         &mut self,
         participant: XID,
-        request_arid: bc_components::ARID,
-        response_arid: bc_components::ARID,
+        send_to_arid: bc_components::ARID,
+        collect_from_arid: bc_components::ARID,
     ) {
         self.requests.push(PendingRequest {
             participant,
-            request_arid: Some(request_arid),
-            response_arid,
+            send_to_arid: Some(send_to_arid),
+            collect_from_arid,
+        });
+    }
+
+    /// Add a pending request where we only know where to send.
+    /// Used after round1 collect (we extracted where to send Round 2).
+    pub fn add_send_only(
+        &mut self,
+        participant: XID,
+        send_to_arid: bc_components::ARID,
+    ) {
+        // Use a dummy collect_from_arid that will be replaced in round2 send
+        self.requests.push(PendingRequest {
+            participant,
+            send_to_arid: Some(send_to_arid),
+            collect_from_arid: send_to_arid, // Placeholder, will be replaced
         });
     }
 
     pub fn is_empty(&self) -> bool { self.requests.is_empty() }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&XID, &bc_components::ARID)> {
+    /// Iterate over (participant, collect_from_arid) pairs.
+    /// Used when collecting responses.
+    pub fn iter_collect(
+        &self,
+    ) -> impl Iterator<Item = (&XID, &bc_components::ARID)> {
         self.requests
             .iter()
-            .map(|r| (&r.participant, &r.response_arid))
+            .map(|r| (&r.participant, &r.collect_from_arid))
     }
 
-    pub fn iter_with_request(
+    /// Iterate over (participant, send_to_arid) pairs.
+    /// Used when sending requests. Panics if send_to_arid is None.
+    pub fn iter_send(
+        &self,
+    ) -> impl Iterator<Item = (&XID, &bc_components::ARID)> {
+        self.requests.iter().map(|r| {
+            (
+                &r.participant,
+                r.send_to_arid
+                    .as_ref()
+                    .expect("send_to_arid not set for this request"),
+            )
+        })
+    }
+
+    /// Iterate over full (participant, send_to_arid, collect_from_arid) tuples.
+    pub fn iter_full(
         &self,
     ) -> impl Iterator<
         Item = (&XID, Option<&bc_components::ARID>, &bc_components::ARID),
     > {
         self.requests.iter().map(|r| {
-            (&r.participant, r.request_arid.as_ref(), &r.response_arid)
+            (
+                &r.participant,
+                r.send_to_arid.as_ref(),
+                &r.collect_from_arid,
+            )
         })
     }
 
@@ -135,16 +190,17 @@ pub struct GroupRecord {
     participants: Vec<GroupParticipant>,
     #[serde(default, skip_serializing_if = "ContributionPaths::is_empty")]
     contributions: ContributionPaths,
-    /// ARID where we expect the coordinator's next message (e.g., Round 2)
-    /// Used by participants waiting for Round 2.
+    /// ARID where this participant is listening for the coordinator's next
+    /// message. Set by participant after responding to invite (expecting
+    /// Round 2 request).
     #[serde(
         default,
         with = "serde_option_arid",
         skip_serializing_if = "Option::is_none"
     )]
-    pending_response: Option<bc_components::ARID>,
-    /// Response ARIDs the coordinator expects from each participant.
-    /// Used by coordinator to collect Round 1 responses.
+    listening_at_arid: Option<bc_components::ARID>,
+    /// Coordinator's tracking of pending participant communications.
+    /// Maps each participant to where to send/collect.
     #[serde(default, skip_serializing_if = "PendingRequests::is_empty")]
     pending_requests: PendingRequests,
 }
@@ -162,7 +218,7 @@ impl GroupRecord {
             coordinator,
             participants,
             contributions: ContributionPaths::default(),
-            pending_response: None,
+            listening_at_arid: None,
             pending_requests: PendingRequests::default(),
         }
     }
@@ -185,15 +241,18 @@ impl GroupRecord {
         self.contributions.merge_missing(other);
     }
 
-    pub fn pending_response(&self) -> Option<bc_components::ARID> {
-        self.pending_response
+    /// Get the ARID where this participant is listening for the next message.
+    pub fn listening_at_arid(&self) -> Option<bc_components::ARID> {
+        self.listening_at_arid
     }
 
-    pub fn set_pending_response(&mut self, arid: bc_components::ARID) {
-        self.pending_response = Some(arid);
+    /// Set the ARID where this participant is listening for the next message.
+    pub fn set_listening_at_arid(&mut self, arid: bc_components::ARID) {
+        self.listening_at_arid = Some(arid);
     }
 
-    pub fn clear_pending_response(&mut self) { self.pending_response = None; }
+    /// Clear the listening ARID (after receiving the expected message).
+    pub fn clear_listening_at_arid(&mut self) { self.listening_at_arid = None; }
 
     pub fn pending_requests(&self) -> &PendingRequests {
         &self.pending_requests

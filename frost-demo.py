@@ -619,6 +619,30 @@ frost dkg round1 collect --storage $STORAGE --timeout $TIMEOUT --registry {qp(RE
 
         run_step(
             shell,
+            "Inspecting Alice's registry after Round 1 collect",
+            f"""
+jq '.groups[].pending_requests' {qp(REGISTRIES["alice"])}
+""",
+            commentary=(
+                "Alice's registry now has pending_requests with send_to_arid (where to post Round 2) "
+                "for each participant. These came from the participants' invite responses."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Checking Bob's listening ARID",
+            f"""
+jq '.groups[].listening_at_arid' {qp(REGISTRIES["bob"])}
+""",
+            commentary=(
+                "Bob's registry shows where he's listening for the Round 2 request. "
+                "This should match what Alice has as send_to_arid for Bob."
+            ),
+        )
+
+        run_step(
+            shell,
             "Inspecting collected Round 1 packages",
             f"""
 jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round1.json
@@ -666,7 +690,50 @@ jq '.groups' {qp(REGISTRIES["alice"])}
 """,
             commentary=(
                 "Alice's registry now has pending_requests for Round 2, mapping each participant "
-                "to both their request ARID (where they fetch) and response ARID (where they post)."
+                "to their response ARID (where they will post their Round 2 response)."
+            ),
+        )
+
+        # ── Participants respond to Round 2 ─────────────────────────────
+
+        # Test with just Bob first
+        run_step(
+            shell,
+            "Bob responds to Round 2 request",
+            f"""
+BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
+frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
+""",
+            commentary=(
+                "Bob fetches the Round 2 request, runs FROST DKG part2 "
+                "with his Round 1 secret and all Round 1 packages, generates Round 2 packages, "
+                "and posts the response back to the coordinator."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Carol responds to Round 2 request",
+            f"""
+CAROL_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["carol"])})
+frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
+""",
+            commentary=(
+                "Carol processes the Round 2 request with her Round 1 secret and all Round 1 packages, "
+                "generates Round 2 packages, and posts them back to the coordinator."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Dan responds to Round 2 request",
+            f"""
+DAN_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["dan"])})
+frost dkg round2 respond --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
+""",
+            commentary=(
+                "Dan processes the Round 2 request with his Round 1 secret and all Round 1 packages, "
+                "generates Round 2 packages, and posts them back to the coordinator."
             ),
         )
 

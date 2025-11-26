@@ -12,17 +12,22 @@ use gstp::{SealedResponse, SealedResponseBehavior};
 use rand_core::OsRng;
 use tokio::runtime::Runtime;
 
+use super::{
+    common::{
+        OptionalStorageSelector, build_group_participants, parse_arid_ur,
+        resolve_sender,
+    },
+    receive::decode_invite_details,
+};
 use crate::{
-    cmd::registry::participants_file_path,
-    registry::{ContributionPaths, GroupParticipant, GroupRecord, OwnerRecord, Registry},
+    cmd::{
+        registry::participants_file_path,
+        storage::{StorageClient, StorageSelection},
+    },
+    registry::{
+        ContributionPaths, GroupParticipant, GroupRecord, OwnerRecord, Registry,
+    },
 };
-
-use super::common::{
-    OptionalStorageSelector, build_group_participants, parse_arid_ur,
-    resolve_sender,
-};
-use super::receive::decode_invite_details;
-use crate::cmd::storage::{StorageClient, StorageSelection};
 
 /// Respond to a DKG invite.
 #[derive(Debug, Parser)]
@@ -131,15 +136,17 @@ impl CommandArgs {
             &details.invitation.sender(),
         )?;
 
-        let mut response_body = build_response_body(
-            details.invitation.group_id(),
-            owner.xid(),
-            next_response_arid,
-            None,
-        )?;
+        // Build the response body
+        // Only generate actual round1 state if we're going to post to storage
+        let is_posting = selection.is_some();
 
-        // Only generate round1 and save group record if accepting
-        if self.reject_reason.is_none() {
+        #[allow(unused_variables)]
+        let (response_body, round1_package_opt) = if self
+            .reject_reason
+            .is_none()
+            && is_posting
+        {
+            // Actually posting - generate and persist round1 state
             let (round1_secret, round1_package) =
                 frost::keys::dkg::part1(identifier, total, min_signers, OsRng)?;
             let contributions = persist_round1_state(
@@ -148,7 +155,7 @@ impl CommandArgs {
                 &round1_secret,
                 &round1_package,
             )?;
-            response_body = build_response_body(
+            let body = build_response_body(
                 details.invitation.group_id(),
                 owner.xid(),
                 next_response_arid,
@@ -158,15 +165,38 @@ impl CommandArgs {
             let mut group_record = GroupRecord::new(
                 details.invitation.charter().to_owned(),
                 details.invitation.min_signers(),
-                coordinator,
-                group_participants,
+                coordinator.clone(),
+                group_participants.clone(),
             );
             group_record.set_contributions(contributions);
-            group_record.set_pending_response(next_response_arid);
+            // Set the ARID where we're listening for the Round 2 request
+            group_record.set_listening_at_arid(next_response_arid);
             registry
                 .record_group(details.invitation.group_id(), group_record)?;
             registry.save(&registry_path)?;
-        }
+
+            (body, Some(round1_package))
+        } else if self.reject_reason.is_none() {
+            // Preview mode - generate dummy round1 for envelope structure only
+            let (_, round1_package) =
+                frost::keys::dkg::part1(identifier, total, min_signers, OsRng)?;
+            let body = build_response_body(
+                details.invitation.group_id(),
+                owner.xid(),
+                next_response_arid,
+                Some(&round1_package),
+            )?;
+            (body, None)
+        } else {
+            // Rejecting - no round1 needed
+            let body = build_response_body(
+                details.invitation.group_id(),
+                owner.xid(),
+                next_response_arid,
+                None,
+            )?;
+            (body, None)
+        };
 
         let signer_private_keys = owner
             .xid_document()

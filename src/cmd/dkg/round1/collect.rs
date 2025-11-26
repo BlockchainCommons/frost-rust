@@ -97,7 +97,10 @@ impl CommandArgs {
             StorageClient::from_selection(selection).await
         })?;
 
-        for (participant_xid, response_arid) in pending_requests.iter() {
+        // Collect invite responses from each participant's response ARID
+        for (participant_xid, collect_from_arid) in
+            pending_requests.iter_collect()
+        {
             let participant_name = registry
                 .participant(participant_xid)
                 .map(|r| {
@@ -112,7 +115,7 @@ impl CommandArgs {
             match fetch_and_validate_response(
                 &runtime,
                 &client,
-                response_arid,
+                collect_from_arid,
                 self.timeout,
                 owner.xid_document(),
                 &group_id,
@@ -167,12 +170,13 @@ impl CommandArgs {
             format!("Failed to write {}", round1_packages_path.display())
         })?;
 
-        // Update pending_requests with the ARIDs participants gave us for Round
-        // 2 (These are the request ARIDs where we should post Round 2
-        // requests)
+        // Update pending_requests with the ARIDs where participants want to
+        // receive Round 2 requests (extracted from their invite
+        // responses as "response_arid") These become the "send_to"
+        // ARIDs for the round2 send phase.
         let mut new_pending = PendingRequests::new();
-        for (xid, next_arid) in &next_response_arids {
-            new_pending.add(*xid, *next_arid);
+        for (xid, send_to_arid) in &next_response_arids {
+            new_pending.add_send_only(*xid, *send_to_arid);
         }
         let group_record = registry
             .group_mut(&group_id)

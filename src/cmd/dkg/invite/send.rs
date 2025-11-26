@@ -129,13 +129,15 @@ fn build_invite(
         .collect();
     let participant_xids: Vec<XID> =
         resolved.iter().map(|(xid, _)| *xid).collect();
-    let response_arids: Vec<ARID> =
+    // These are the ARIDs where participants will post their invite responses
+    let collect_from_arids: Vec<ARID> =
         (0..participant_docs.len()).map(|_| ARID::new()).collect();
 
-    // Build pending_requests mapping participant XIDs to their response ARIDs
+    // Build pending_requests: coordinator will collect invite responses from
+    // these ARIDs
     let mut pending_requests = PendingRequests::new();
-    for (xid, arid) in participant_xids.iter().zip(response_arids.iter()) {
-        pending_requests.add(*xid, *arid);
+    for (xid, arid) in participant_xids.iter().zip(collect_from_arids.iter()) {
+        pending_requests.add_collect_only(*xid, *arid);
     }
 
     let participant_count = participant_docs.len();
@@ -163,7 +165,7 @@ fn build_invite(
         min_signers,
         charter,
         participant_docs,
-        response_arids,
+        collect_from_arids,
     )?;
 
     Ok(InviteData { invite, participant_xids, pending_requests })
