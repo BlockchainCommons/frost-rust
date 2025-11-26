@@ -200,7 +200,6 @@ impl InviteRespondArgs {
         let mut response_body = build_response_body(
             details.invitation.group_id(),
             owner.xid(),
-            identifier_index,
             next_response_arid,
             None,
         )?;
@@ -217,7 +216,6 @@ impl InviteRespondArgs {
             response_body = build_response_body(
                 details.invitation.group_id(),
                 owner.xid(),
-                identifier_index,
                 next_response_arid,
                 Some(&round1_package),
             )?;
@@ -269,23 +267,12 @@ impl InviteRespondArgs {
         sealed = sealed
             .with_peer_continuation(details.invitation.peer_continuation());
 
-        let preview_envelope = if let Some(reason) = &self.reject_reason {
-            let error_body = Envelope::new("dkgInviteReject")
-                .add_assertion("group", details.invitation.group_id())
-                .add_assertion("response_arid", next_response_arid)
-                .add_assertion("reason", reason.clone());
-            Some(error_body)
-        } else {
-            Some(response_body.clone())
-        };
-
-        let response_envelope = sealed.to_envelope(
-            Some(details.invitation.valid_until()),
-            Some(signer_private_keys),
-            Some(&details.invitation.sender()),
-        )?;
-
         if let Some(selection) = selection {
+            let response_envelope = sealed.to_envelope(
+                Some(details.invitation.valid_until()),
+                Some(signer_private_keys),
+                Some(&details.invitation.sender()),
+            )?;
             let response_target = details.invitation.response_arid();
             let envelope_to_send = response_envelope.clone();
             let runtime = Runtime::new()?;
@@ -294,12 +281,17 @@ impl InviteRespondArgs {
                 client.put(&response_target, &envelope_to_send).await?;
                 Ok::<(), anyhow::Error>(())
             })?;
-            // println!("Response posted to Hubert.");
         } else if self.unsealed {
-            if let Some(preview) = preview_envelope {
-                println!("{}", preview.ur_string());
-            }
+            // Show the GSTP response structure without encryption
+            let unsealed_envelope =
+                sealed.to_envelope(None, Some(signer_private_keys), None)?;
+            println!("{}", unsealed_envelope.ur_string());
         } else {
+            let response_envelope = sealed.to_envelope(
+                Some(details.invitation.valid_until()),
+                Some(signer_private_keys),
+                Some(&details.invitation.sender()),
+            )?;
             println!("{}", response_envelope.ur_string());
         }
 
@@ -389,7 +381,7 @@ impl InviteSendArgs {
 
             println!("{}", arid.ur_string());
         } else if self.unsealed {
-            let envelope = invite.to_request()?.request().to_envelope();
+            let envelope = invite.to_unsealed_envelope()?;
             println!("{}", envelope.ur_string());
         } else {
             let envelope = invite.to_envelope()?;
@@ -840,14 +832,12 @@ fn group_participant_from_registry(
 fn build_response_body(
     group_id: ARID,
     participant: XID,
-    identifier_index: u16,
     response_arid: ARID,
     round1_package: Option<&frost::keys::dkg::round1::Package>,
 ) -> Result<Envelope> {
     let mut envelope = Envelope::new("dkgInviteResponse")
         .add_assertion("group", group_id)
         .add_assertion("participant", participant)
-        .add_assertion("identifier", u64::from(identifier_index))
         .add_assertion("response_arid", response_arid);
     if let Some(package) = round1_package {
         let encoded = serde_json::to_vec(package)?;

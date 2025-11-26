@@ -1,91 +1,138 @@
-## Make existing commands consistent
+# Priority Tasks for `frost` Crate
 
-- `invite send` replaces `invite compose`.
-- `invite view` is no longer necessary.
-- When Hubert storage parameters are present, post the sealed message and do not print the envelope; print the ARID only when it must be shared out-of-band (the coordinator's initial invite ARID). Subsequent GSTP messages include their response ARIDs when they expect further replies. `--unsealed` must be rejected with Hubert params.
-- When Hubert storage parameters are absent, print the sealed envelope UR by default; `--unsealed` prints the unsealed envelope UR for auditing.
-- `invite receive` handles Hubert retrieval or direct envelope input; it never emits ARIDs. Envelope printing is only for local inspection (suppressed with `--no-envelope`); `--info` controls detail output.
-- `invite respond` follows the same split: without Hubert params, print sealed (or unsealed with `--unsealed`) response envelopes; with Hubert params, post only and suppress envelope output (ARID is implied by the request/response flow).
+## Current State Summary
 
+The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized Schnorr Threshold) participants. Current functionality:
+
+1. **Registry Management** (`frost registry`)
+   - Owner set with private XID documents
+   - Participant add with signed public XID documents
+   - Persistent JSON storage
+
+2. **DKG Invite Flow** (`frost dkg invite`)
+   - `send`: Coordinator creates sealed/unsealed invites for participants
+   - `receive`: Participants fetch and decrypt invites from Hubert or local envelope
+   - `respond`: Participants accept or reject, posting response to Hubert
+
+3. **Storage Backends**
+   - Hubert server (HTTP)
+   - Mainline DHT
+   - IPFS
+   - Hybrid (DHT + IPFS)
+
+4. **Demo Script** (`frost-demo.py`)
+   - Provisions 4 participants (Alice, Bob, Carol, Dan)
+   - Builds registries
+   - Creates and responds to DKG invites via Hubert
+
+## Where the Demo Stops
+
+The `demo-log.md` ends after all participants respond to the invite. The DKG Round 1 packages are generated and persisted locally (`group-state/<group-id>/round1_secret.json`, `round1_package.json`), but the protocol is incomplete.
+
+## Next Steps (Priority Order)
+
+### 1. Coordinator Collects Round 1 Packages
+
+**Command:** `frost dkg round1 collect`
+
+The coordinator (Alice) needs to:
+- Fetch all participant responses from Hubert using their assigned response ARIDs
+- Validate each response (GSTP response, signature, group membership)
+- Extract Round 1 packages from successful responses
+- Store the collected packages locally
+
+**Why first:** Without collecting Round 1, the coordinator cannot proceed to Round 2.
+
+### 2. Coordinator Sends Round 2 Requests
+
+**Command:** `frost dkg round2 send`
+
+The coordinator:
+- Constructs Round 2 messages for each participant pair
+- Creates a new GSTP request with all Round 1 packages
+- Seals and sends to Hubert with per-participant encrypted response ARIDs
+
+### 3. Participants Complete Round 2
+
+**Command:** `frost dkg round2 respond`
+
+Each participant:
+- Fetches Round 2 request
+- Runs `frost_ed25519::keys::dkg::part2` with their Round 1 secret and all Round 1 packages
+- Generates Round 2 packages (one per other participant)
+- Persists `round2_secret.json`
+- Posts encrypted Round 2 packages back to coordinator
+
+### 4. Coordinator Collects and Distributes Round 2
+
+**Command:** `frost dkg round2 collect` and `frost dkg finalize send`
+
+The coordinator:
+- Collects all Round 2 packages
+- Redistributes each participant's incoming Round 2 packages to them
+
+### 5. Participants Finalize Key Generation
+
+**Command:** `frost dkg finalize`
+
+Each participant:
+- Runs `frost_ed25519::keys::dkg::part3` with their Round 2 secret and incoming packages
+- Produces `KeyPackage` and `PublicKeyPackage`
+- Stores `key_package.json`
+- Updates group status to `Complete`
+
+### 6. Group Status and Listing
+
+**Commands:**
+- `frost group list` - List all groups in registry with status
+- `frost group info <GROUP_ID>` - Show group details, participants, coordinator, signing threshold
+
+### 7. Threshold Signing
+
+Once key generation is complete:
+- `frost sign start` - Coordinator initiates signing session
+- `frost sign commit` - Participant sends commitment
+- `frost sign contribute` - Participant sends signature share
+- `frost sign finish` - Coordinator aggregates shares into final signature
+
+## Implementation Notes
+
+### GroupRecord Enhancements
+
+The `ContributionPaths` structure is ready for Round 2:
+```rust
+pub struct ContributionPaths {
+    pub round1_secret: Option<String>,
+    pub round1_package: Option<String>,
+    pub round2_secret: Option<String>,  // Ready but unused
+    pub key_package: Option<String>,    // Ready but unused
+}
 ```
-# Just composes the sealed invite and prints its envelope UR:
 
-frost dkg invite send <registry-info> <config-info> <participants>
+### GSTP Flow
 
-# The output of this command could be posted using the `hubert put` command to store it in Hubert for retrieval by the participants.
-```
+The pattern is established:
+1. Coordinator sends `SealedRequest` with function name and parameters
+2. Participants decrypt, validate, process
+3. Participants send `SealedResponse` with result or error
+4. Coordinator collects responses
 
-```
-# Just composes the unsealed invite and prints its envelope UR:
+### Test Coverage
 
-frost dkg invite send --unsealed <registry-info> <config-info> <participants>
+Add integration tests for:
+- Round 1 collection from Hubert
+- Round 2 message construction and distribution
+- Key package generation
+- End-to-end signing flow
 
-# This version is unsealed, so it's not suitable for posting to Hubert, but it can be inspected directly.
-```
+### Demo Script Updates
 
-```
-# Composes the sealed invite, stores it in Hubert, and prints the invite ARID UR:
+After implementing each phase, extend `frost-demo.py` to demonstrate the full flow from invite through signing.
 
-frost dkg invite send <registry-info> <config-info> <hubert info> <participants>
+## Lower Priority Enhancements
 
-# Note the `--unsealed` flag is invalid in this case.
-```
-
-```
-frost dkg invite receive <registry-info> <hubert-info> <invite-arid> [--timeout <seconds>] [--no-envelope] [--info]
-
-# This command retrieves the sealed invite from Hubert using the provided ARID, decrypts and verifies it, and prints the invite envelope (unless --no-envelope) and invite details (if --info).
-```
-
-```
-frost dkg invite receive <registry-info> <invite-envelope>
-
-# This command processes the provided invite envelope directly, decrypts and verifies it, and prints the invite details.
-```
-
-```
-# Compose a response to an invite, either accepting it (default) or rejecting it with a reason:
-
-frost dkg invite respond <registry-info> <invite-envelope> [--reject <reason>]
-
-# This command composes a response to the provided invite envelope, either accepting it (default) or rejecting it with the provided reason, and prints the sealed response envelope UR.
-# This version can be posted to Hubert for retrieval by the coordinator. The coordinator knows where to find it because the invite included a reply ARID for the participant to use.
-```
-
-```
-# Compose a response to an invite, either accepting it (default) or rejecting it with a reason, and print the unsealed response envelope UR:
-
-frost dkg invite respond <registry-info> <invite-envelope> [--reject <reason>] --unsealed
-
-# This command composes a response to the provided invite envelope, either accepting it (default) or rejecting it with the provided reason, and prints the unsealed response envelope UR for inspection.
-# This version is not suitable for posting to Hubert.
-```
-
-```
-# Compose a response to an invite, either accepting it (default) or rejecting it with a reason, and store it in Hubert.
-
-frost dkg invite respond <registry-info> <hubert-info> <invite-envelope> [--reject <reason>]
-
-# The response ARID for the coordinator's next message is included in the response envelope, and therefore does not need to be printed separately.
-```
-
-## Plan for `dkg invite respond` and group tracking
-
-1) Rename session ID to group ID
-   - Throughout CLI, registry, and envelopes, treat the invite’s session ID as `group_id`. Update terminology accordingly.
-
-2) Registry schema update
-   - Add a `groups` map keyed by `group_id` storing charter, min_signers, participants (pet name + xid), coordinator, status, and local contribution paths (round1/round2/key package). Provide helpers to load/save these group records.
-
-3) Deterministic participant identifiers
-   - Use lexicographic ordering of participant XIDs to assign FROST identifiers; derive the current participant’s identifier index from this ordering and reuse it consistently in all DKG rounds.
-
-4) Implement `dkg invite respond`
-   - Reuse invite parsing/validation; persist the group config into the registry under `group_id`.
-   - `--accept` (default): run `frost_ed25519::keys::dkg::part1` with identifier/total/min, store the round1 SecretPackage locally (per group/participant), record its path in the registry, and send a signed accept envelope (identifier index + round1 package) to the reply ARID via Hubert. Include a new response ARID (for the coordinator’s next message) in every Hubert post because further exchanges are expected.
-   - `--reject`: mark group status reject and send a reject envelope, also including a new response ARID for follow-up if needed.
-   - Provide a way to view/print the composed response envelope before sending (similar to invite compose), for inspection or offline delivery.
-
-5) Future follow-ups (out of scope to code now)
-   - Coordinator commands to collect responses, run part2, distribute round2 packages, and finalize group keys; participant commands to consume round2 and produce final key packages, all keyed by `group_id` and using the same XID ordering.
-   - All Hubert messages that expect further replies must carry a fresh response ARID. Maintain the GSTP contract: the invite is a GSTP `Request`, so invite responses must be `Response` envelopes carrying the same GSTP request ID (distinct from the group/session ID).
+- **Timeout handling** for unresponsive participants
+- **Resharing** when participants need to be replaced
+- **Key rotation** for long-lived groups
+- **Audit logging** of all DKG and signing operations
+- **Recovery mode** if a participant loses state mid-protocol

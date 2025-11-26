@@ -127,6 +127,25 @@ impl DkgGroupInvite {
         Ok(request)
     }
 
+    /// Creates a signed but unencrypted envelope for auditing/preview.
+    pub fn to_unsealed_envelope(&self) -> Result<Envelope> {
+        let request = self.to_request()?;
+        let sender = self.sender();
+        let signer_private_keys =
+            sender.inception_private_keys().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sender XID document has no inception signing key"
+                )
+            })?;
+        let envelope = request.to_envelope(
+            Some(self.valid_until()),
+            Some(signer_private_keys),
+            None, // No recipient = signed but not encrypted
+        )?;
+        Ok(envelope)
+    }
+
+    /// Creates a sealed envelope encrypted to all participants.
     pub fn to_envelope(&self) -> Result<Envelope> {
         let request = self.to_request()?;
         let sender = self.sender();

@@ -532,12 +532,37 @@ frost dkg invite receive --info --no-envelope --registry {qp(REGISTRIES["bob"])}
 
         run_step(
             shell,
+            "Composing Bob's unsealed invite response",
+            f"""
+BOB_RESPONSE_UNSEALED=$(frost dkg invite respond --unsealed --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
+echo "${{BOB_RESPONSE_UNSEALED}}" | envelope format
+""",
+            commentary=(
+                "Preview the unsealed response envelope structure before posting. "
+                "This shows the DKG Round 1 package and group metadata."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Composing Bob's sealed invite response",
+            f"""
+BOB_RESPONSE_SEALED=$(frost dkg invite respond --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
+echo "${{BOB_RESPONSE_SEALED}}" | envelope format
+""",
+            commentary=(
+                "The sealed response is encrypted to a single recipient (Alice, the coordinator)."
+            ),
+        )
+
+        run_step(
+            shell,
             "Bob responds to the invite",
             f"""
 frost dkg invite respond --storage server --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
-                "Post Bob's response to Hubert using the cached invite envelope."
+                "Post Bob's sealed response to Hubert using the cached invite envelope."
             ),
         )
 
