@@ -159,31 +159,7 @@ impl Registry {
                     );
                 }
                 let mut merged = existing.clone();
-                merged.set_status(record.status().clone());
-                merged.update_response_arid(record.response_arid());
-                merged.update_request_id(record.request_id());
-
-                let mut contributions = merged.contributions().clone();
-                let updates = record.contributions();
-                if updates.round1_secret.is_some() {
-                    contributions.round1_secret = updates.round1_secret.clone();
-                }
-                if updates.round1_package.is_some() {
-                    contributions.round1_package =
-                        updates.round1_package.clone();
-                }
-                if updates.round2_secret.is_some() {
-                    contributions.round2_secret = updates.round2_secret.clone();
-                }
-                if updates.key_package.is_some() {
-                    contributions.key_package = updates.key_package.clone();
-                }
-                merged.set_contributions(contributions);
-
-                if let Some(arid) = record.next_response_arid() {
-                    merged.set_next_response_arid(arid);
-                }
-
+                merged.merge_contributions(record.contributions());
                 self.groups.insert(key, merged);
                 Ok(GroupOutcome::Updated)
             }
@@ -213,7 +189,7 @@ pub enum GroupOutcome {
     Updated,
 }
 
-fn group_key(group_id: &ARID) -> String { group_id.hex() }
+fn group_key(group_id: &ARID) -> String { group_id.ur_string() }
 
 mod serde_participants_map {
     use super::*;

@@ -28,8 +28,8 @@ use crate::{
         },
     },
     registry::{
-        ContributionPaths, GroupParticipant, GroupRecord, GroupStatus,
-        OwnerRecord, ParticipantRecord, Registry,
+        ContributionPaths, GroupParticipant, GroupRecord, OwnerRecord,
+        ParticipantRecord, Registry,
     },
 };
 
@@ -196,7 +196,6 @@ impl InviteRespondArgs {
             &details.invitation.sender(),
         )?;
 
-        let mut contributions = ContributionPaths::default();
         let mut response_body = build_response_body(
             details.invitation.group_id(),
             owner.xid(),
@@ -204,10 +203,11 @@ impl InviteRespondArgs {
             None,
         )?;
 
+        // Only generate round1 and save group record if accepting
         if self.reject_reason.is_none() {
             let (round1_secret, round1_package) =
                 frost::keys::dkg::part1(identifier, total, min_signers, OsRng)?;
-            contributions = persist_round1_state(
+            let contributions = persist_round1_state(
                 &registry_path,
                 &details.invitation.group_id(),
                 &round1_secret,
@@ -219,27 +219,19 @@ impl InviteRespondArgs {
                 next_response_arid,
                 Some(&round1_package),
             )?;
-        }
 
-        let status = match &self.reject_reason {
-            Some(reason) => {
-                GroupStatus::Rejected { reason: Some(reason.clone()) }
-            }
-            None => GroupStatus::Accepted,
-        };
-        let mut group_record = GroupRecord::new(
-            details.invitation.charter().to_owned(),
-            details.invitation.min_signers(),
-            coordinator,
-            group_participants,
-            details.invitation.request_id(),
-            details.invitation.response_arid(),
-            status.clone(),
-        );
-        group_record.set_contributions(contributions);
-        group_record.set_next_response_arid(next_response_arid);
-        registry.record_group(details.invitation.group_id(), group_record)?;
-        registry.save(&registry_path)?;
+            let mut group_record = GroupRecord::new(
+                details.invitation.charter().to_owned(),
+                details.invitation.min_signers(),
+                coordinator,
+                group_participants,
+            );
+            group_record.set_contributions(contributions);
+            group_record.set_pending_response(next_response_arid);
+            registry
+                .record_group(details.invitation.group_id(), group_record)?;
+            registry.save(&registry_path)?;
+        }
 
         let signer_private_keys = owner
             .xid_document()
@@ -812,21 +804,15 @@ fn group_participant_from_registry(
 ) -> Result<GroupParticipant> {
     let xid = document.xid();
     if xid == owner.xid() {
-        return Ok(GroupParticipant::new(
-            xid,
-            owner.pet_name().map(|s| s.to_owned()),
-        ));
+        return Ok(GroupParticipant::new(xid));
     }
-    let record = registry.participant(&xid).ok_or_else(|| {
-        anyhow::anyhow!(
+    if registry.participant(&xid).is_none() {
+        anyhow::bail!(
             "Invite participant not found in registry: {}",
             xid.ur_string()
-        )
-    })?;
-    Ok(GroupParticipant::new(
-        xid,
-        record.pet_name().map(|s| s.to_owned()),
-    ))
+        );
+    }
+    Ok(GroupParticipant::new(xid))
 }
 
 fn build_response_body(
