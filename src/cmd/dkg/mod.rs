@@ -1,4 +1,5 @@
 mod common;
+pub mod finalize;
 pub mod invite;
 pub mod round1;
 pub mod round2;
@@ -22,6 +23,8 @@ enum Commands {
     Round1(round1::CommandArgs),
     /// DKG Round 2 operations
     Round2(round2::CommandArgs),
+    /// DKG finalize operations
+    Finalize(finalize::CommandArgs),
 }
 
 impl CommandArgs {
@@ -30,6 +33,7 @@ impl CommandArgs {
             Commands::Invite(args) => args.exec(),
             Commands::Round1(args) => args.exec(),
             Commands::Round2(args) => args.exec(),
+            Commands::Finalize(args) => args.exec(),
         }
     }
 }

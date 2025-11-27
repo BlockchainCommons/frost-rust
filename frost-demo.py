@@ -771,6 +771,33 @@ jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round2.json
             commentary="Collected Round 2 packages with each sender's next response ARID.",
         )
 
+        # ── DKG Finalize send (distribution of round2 packages) ─────────────
+
+        run_step(
+            shell,
+            "Alice composes a preview finalize request (for first participant)",
+            f"""
+FINALIZE_PREVIEW=$(frost dkg finalize send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
+echo "${{FINALIZE_PREVIEW}}" | envelope format
+""",
+            commentary=(
+                "Preview the finalize request structure that delivers incoming Round 2 packages "
+                "to a participant along with their responseArid for finalize respond."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Alice sends finalize packages to each participant",
+            f"""
+frost dkg finalize send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+""",
+            commentary=(
+                "Alice posts the finalize requests (with each participant's incoming Round 2 packages) "
+                "to the ARIDs provided in Round 2 collect."
+            ),
+        )
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
