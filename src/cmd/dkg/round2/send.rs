@@ -182,7 +182,7 @@ impl CommandArgs {
                     .unwrap_or_else(|| xid.ur_string());
 
                 if is_verbose() {
-                    eprint!("  {} ... ", participant_name);
+                    eprintln!("{}...", participant_name);
                 }
 
                 let request = build_round2_request_for_participant(
@@ -204,9 +204,7 @@ impl CommandArgs {
                     client.put(send_to_arid, &sealed_envelope).await
                 })?;
 
-                if is_verbose() {
-                    eprintln!("ok");
-                }
+                // No trailing status; Hubert logs provide confirmation
             }
 
             // Update group record with pending_requests for Round 2 collection

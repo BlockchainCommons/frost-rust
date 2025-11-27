@@ -287,10 +287,7 @@ fn extract_round1_packages(
     request: &SealedRequest,
     group_record: &crate::registry::GroupRecord,
     owner: &crate::registry::OwnerRecord,
-) -> Result<(
-    BTreeMap<Identifier, frost::keys::dkg::round1::Package>,
-    Vec<(XID, frost::keys::dkg::round1::Package)>,
-)> {
+) -> Result<Round1Packages> {
     // Build XID -> Identifier mapping based on sorted participant order
     let mut sorted_xids: Vec<XID> = group_record
         .participants()
@@ -360,6 +357,11 @@ fn extract_round1_packages(
 
     Ok((packages, packages_by_xid))
 }
+
+type Round1Packages = (
+    BTreeMap<Identifier, frost::keys::dkg::round1::Package>,
+    Vec<(XID, frost::keys::dkg::round1::Package)>,
+);
 
 /// Build the response body containing Round 2 packages
 fn build_response_body(

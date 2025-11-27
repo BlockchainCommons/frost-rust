@@ -22,6 +22,9 @@ use crate::{
     registry::{PendingRequests, Registry},
 };
 
+type RecipientPackages =
+    HashMap<XID, (ARID, Vec<(XID, frost::keys::dkg::round2::Package)>)>;
+
 /// Send finalize packages to all participants (coordinator only).
 #[derive(Debug, Parser)]
 #[group(skip)]
@@ -183,7 +186,7 @@ impl CommandArgs {
                     .unwrap_or_else(|| recipient_xid.ur_string());
 
                 if is_verbose() {
-                    eprint!("  {} ... ", recipient_name);
+                    eprintln!("{}...", recipient_name);
                 }
 
                 let packages_for_recipient = gather_packages_for_recipient(
@@ -207,10 +210,6 @@ impl CommandArgs {
                 runtime.block_on(async {
                     client.put(send_to_arid, &sealed_envelope).await
                 })?;
-
-                if is_verbose() {
-                    eprintln!("ok");
-                }
             }
 
             // Update pending_requests for finalize collection
@@ -296,7 +295,7 @@ fn recipient_doc<'a>(
 
 fn gather_packages_for_recipient(
     recipient: &XID,
-    all: &HashMap<XID, (ARID, Vec<(XID, frost::keys::dkg::round2::Package)>)>,
+    all: &RecipientPackages,
 ) -> Result<Vec<(XID, frost::keys::dkg::round2::Package)>> {
     let mut result = Vec::new();
     for (sender, (_, packages)) in all {

@@ -5,7 +5,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use bc_components::{ARID, JSON, XID, XIDProvider};
+use bc_components::{
+    ARID, Ed25519PublicKey, JSON, SigningPublicKey, XID, XIDProvider,
+};
 use bc_envelope::prelude::*;
 use clap::Parser;
 use frost_ed25519 as frost;
@@ -235,6 +237,10 @@ impl CommandArgs {
             frost::keys::dkg::part3(&round2_secret, &round1_map, &round2_map)
                 .map_err(|e| anyhow::anyhow!("FROST DKG part3 failed: {}", e))?;
 
+        let group_verifying_key =
+            signing_key_from_verifying(public_key_package.verifying_key())
+                .context("Failed to derive group verifying key")?;
+
         if is_verbose() {
             eprintln!("Generated key package and public key package.");
         }
@@ -281,6 +287,9 @@ impl CommandArgs {
         .with_peer_continuation(sealed_request.peer_continuation());
 
         if self.preview {
+            if is_verbose() {
+                eprintln!("{}", group_verifying_key.ur_string());
+            }
             let unsealed_envelope =
                 sealed_response.to_envelope(None, Some(signer_keys), None)?;
             println!("{}", unsealed_envelope.ur_string());
@@ -306,6 +315,8 @@ impl CommandArgs {
             Some(key_package_path.to_string_lossy().into_owned());
         group_record.set_contributions(contributions);
         group_record.clear_listening_at_arid();
+        group_record.set_verifying_key(group_verifying_key);
+        let group_key = group_record.verifying_key().cloned();
         registry.save(&registry_path)?;
 
         if is_verbose() {
@@ -313,6 +324,11 @@ impl CommandArgs {
                 "Posted finalize response to {}",
                 response_arid.ur_string()
             );
+            if let Some(key) = group_key.as_ref() {
+                eprintln!("{}", key.ur_string());
+            }
+        } else if let Some(key) = group_key.as_ref() {
+            println!("{}", key.ur_string());
         }
 
         Ok(())
@@ -333,6 +349,17 @@ fn build_response_body(
         .add_assertion("participant", *participant)
         .add_assertion("key_package", CBOR::from(key_json))
         .add_assertion("public_key_package", CBOR::from(pub_json)))
+}
+
+fn signing_key_from_verifying(
+    verifying_key: &frost_ed25519::VerifyingKey,
+) -> Result<SigningPublicKey> {
+    let bytes = verifying_key.serialize().map_err(|e| {
+        anyhow::anyhow!("Failed to serialize verifying key: {e}")
+    })?;
+    let ed25519 = Ed25519PublicKey::from_data_ref(bytes)
+        .context("Group verifying key is not a valid Ed25519 public key")?;
+    Ok(SigningPublicKey::from_ed25519(ed25519))
 }
 
 fn group_state_dir(registry_path: &Path, group_id: &ARID) -> PathBuf {

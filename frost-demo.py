@@ -842,6 +842,42 @@ frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --reg
             commentary="Dan posts his finalize response with generated key packages.",
         )
 
+        run_step(
+            shell,
+            "Alice collects finalize responses",
+            f"""
+ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
+frost dkg finalize collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+""",
+            commentary=(
+                "Alice fetches all finalize responses, validates them, saves collected "
+                "key packages, and reports the group verifying key."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Inspecting collected finalize responses",
+            f"""
+jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_finalize.json
+""",
+            commentary="Collected finalize responses keyed by participant XID.",
+        )
+
+        run_step(
+            shell,
+            "Verifying group key across all participants",
+            f"""
+for name in {" ".join(PARTICIPANTS)}; do
+  echo "$name:"
+  jq -r '.groups | to_entries[0].value.verifying_key' {qp(DEMO_DIR)}/$name/registry.json
+done
+""",
+            commentary=(
+                "Each registry records the same group verifying key (UR form)."
+            ),
+        )
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 

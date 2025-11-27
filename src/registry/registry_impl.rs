@@ -160,6 +160,21 @@ impl Registry {
                 }
                 let mut merged = existing.clone();
                 merged.merge_contributions(record.contributions());
+                if merged.verifying_key().is_none()
+                    && record.verifying_key().is_some()
+                {
+                    if let Some(key) = record.verifying_key() {
+                        merged.set_verifying_key(key.clone());
+                    }
+                } else if let (Some(existing_key), Some(new_key)) =
+                    (merged.verifying_key(), record.verifying_key())
+                    && existing_key != new_key
+                {
+                    bail!(
+                        "Group {} already exists with a different verifying key",
+                        group_id.hex()
+                    );
+                }
                 self.groups.insert(key, merged);
                 Ok(GroupOutcome::Updated)
             }

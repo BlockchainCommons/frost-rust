@@ -115,7 +115,7 @@ impl CommandArgs {
                 .unwrap_or_else(|| participant_xid.ur_string());
 
             if is_verbose() {
-                eprint!("  {} ... ", participant_name);
+                eprintln!("{}...", participant_name);
             }
 
             match fetch_and_validate_response(
@@ -127,9 +127,6 @@ impl CommandArgs {
                 &group_id,
             ) {
                 Ok((package, next_arid)) => {
-                    if is_verbose() {
-                        eprintln!("ok");
-                    }
                     round1_packages.push((*participant_xid, package));
                     next_response_arids.push((*participant_xid, next_arid));
                 }

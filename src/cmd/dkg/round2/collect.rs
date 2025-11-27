@@ -108,7 +108,7 @@ impl CommandArgs {
                 .unwrap_or_else(|| participant_xid.ur_string());
 
             if is_verbose() {
-                eprint!("  {} ... ", name);
+                eprintln!("{}...", name);
             }
 
             match fetch_response(
@@ -122,9 +122,6 @@ impl CommandArgs {
             ) {
                 Ok(collected_entry) => {
                     collected.push(collected_entry);
-                    if is_verbose() {
-                        eprintln!("ok");
-                    }
                 }
                 Err(err) => {
                     if is_verbose() {

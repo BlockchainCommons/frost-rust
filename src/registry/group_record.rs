@@ -1,4 +1,4 @@
-use bc_components::XID;
+use bc_components::{SigningPublicKey, XID};
 use bc_envelope::prelude::UREncodable;
 use bc_ur::URDecodable;
 use serde::{Deserialize, Serialize};
@@ -203,6 +203,13 @@ pub struct GroupRecord {
     /// Maps each participant to where to send/collect.
     #[serde(default, skip_serializing_if = "PendingRequests::is_empty")]
     pending_requests: PendingRequests,
+    /// Final aggregated group verifying key (Ed25519)
+    #[serde(
+        default,
+        with = "serde_option_signing_public_key",
+        skip_serializing_if = "Option::is_none"
+    )]
+    verifying_key: Option<SigningPublicKey>,
 }
 
 impl GroupRecord {
@@ -220,6 +227,7 @@ impl GroupRecord {
             contributions: ContributionPaths::default(),
             listening_at_arid: None,
             pending_requests: PendingRequests::default(),
+            verifying_key: None,
         }
     }
 
@@ -271,6 +279,14 @@ impl GroupRecord {
             && self.min_signers == other.min_signers
             && self.coordinator == other.coordinator
             && self.participants == other.participants
+    }
+
+    pub fn verifying_key(&self) -> Option<&SigningPublicKey> {
+        self.verifying_key.as_ref()
+    }
+
+    pub fn set_verifying_key(&mut self, key: SigningPublicKey) {
+        self.verifying_key = Some(key);
     }
 }
 
@@ -379,5 +395,46 @@ mod serde_option_arid {
                 .map_err(serde::de::Error::custom)?;
             ARID::from_data_ref(bytes).map_err(serde::de::Error::custom)
         })
+    }
+}
+
+mod serde_option_signing_public_key {
+    use bc_components::SigningPublicKey;
+    use bc_envelope::prelude::URDecodable;
+    use serde::{Deserialize, Deserializer, Serializer, de::IntoDeserializer};
+
+    pub fn serialize<S>(
+        value: &Option<SigningPublicKey>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use bc_envelope::prelude::UREncodable;
+        match value {
+            Some(key) => serializer.serialize_some(&key.ur_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<SigningPublicKey>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw: Option<String> = Option::deserialize(deserializer)?;
+        raw.map(|value| deserialize_key(value.into_deserializer()))
+            .transpose()
+    }
+
+    fn deserialize_key<'de, D>(
+        deserializer: D,
+    ) -> Result<SigningPublicKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        SigningPublicKey::from_ur_string(&raw).map_err(serde::de::Error::custom)
     }
 }
