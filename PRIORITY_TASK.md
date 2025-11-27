@@ -43,6 +43,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Coordinator sends finalize requests
    - Participants post finalize responses
    - Coordinator collects finalize responses and outputs the group verifying key
+   - Signing: builds a sample target envelope, previews `sign start` (signCommit) unsealed, and posts it to Hubert
 
 ## Where the Demo Stops (current)
 
@@ -59,7 +60,10 @@ The `demo-log.md` now runs through finalize collect. Each participant has:
 
 ## Next Steps (Priority Order)
 
-### 1. Threshold Signing Flow (detailed, in implementation order)
+### 1. Threshold Signing Flow (status + implementation order)
+
+- Implemented: `frost sign start` (coordinator) with first-hop ARID, per-participant commit/share ARIDs, full target envelope, preview and Hubert post.
+- Pending: `frost sign commit`, `frost sign collect`, `frost sign share`, `frost sign finish`.
 
 1) **`frost sign start` (coordinator)**
    - Inputs: group ID; target envelope (assumed already wrapped as needed).
