@@ -45,13 +45,13 @@ pub struct CommandArgs {
     #[arg(long = "reject", value_name = "REASON")]
     reject_reason: Option<String>,
 
-    /// Optional session ID to disambiguate when multiple sign sessions exist
-    #[arg(long = "session", value_name = "UR:ARID")]
-    session: Option<String>,
+    /// Optional group ID hint when multiple groups exist
+    #[arg(long = "group", value_name = "UR:ARID")]
+    group_id: Option<String>,
 
-    /// Group ID to respond for
-    #[arg(value_name = "GROUP_ID")]
-    group_id: String,
+    /// Signing session ID to respond to
+    #[arg(value_name = "SESSION_ID")]
+    session: String,
 }
 
 impl CommandArgs {
@@ -78,27 +78,23 @@ impl CommandArgs {
             .context("Registry owner is required")?
             .clone();
 
-        let group_id = parse_arid_ur(&self.group_id)?;
-        let group_record = registry
-            .group(&group_id)
-            .context("Group not found in registry")?
-            .clone();
-
-        let session_id_override =
-            self.session.as_ref().map(|raw| parse_arid_ur(raw));
-        let session_id_override = match session_id_override {
-            Some(Ok(id)) => Some(id),
-            Some(Err(e)) => return Err(e),
+        let session_id = parse_arid_ur(&self.session)?;
+        let group_hint = match &self.group_id {
+            Some(raw) => Some(parse_arid_ur(raw)?),
             None => None,
         };
 
         let receive_state = load_receive_state(
             &registry_path,
-            &group_id,
-            session_id_override,
+            &session_id,
+            group_hint,
             &registry,
         )?;
-        let session_id = receive_state.session_id;
+        let group_id = receive_state.group_id;
+        let group_record = registry
+            .group(&group_id)
+            .context("Group not found in registry")?
+            .clone();
 
         // Decrypt persisted request to validate and get peer continuation
         let owner_keys = owner
@@ -277,7 +273,7 @@ impl CommandArgs {
 }
 
 struct ReceiveState {
-    session_id: ARID,
+    group_id: ARID,
     coordinator_doc: bc_xid::XIDDocument,
     response_arid: ARID,
     target_ur: String,
@@ -287,42 +283,62 @@ struct ReceiveState {
 
 fn load_receive_state(
     registry_path: &Path,
-    group_id: &ARID,
-    session_override: Option<ARID>,
+    session_id: &ARID,
+    group_hint: Option<ARID>,
     registry: &Registry,
 ) -> Result<ReceiveState> {
-    let signing_dir = signing_state_dir_for_group(registry_path, group_id);
-    let candidates: Vec<PathBuf> = if let Some(session) = session_override {
-        let dir = signing_dir.join(session.hex());
-        vec![dir.join("sign_receive.json")]
+    let base = registry_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let group_state_dir = base.join("group-state");
+
+    let group_dirs: Vec<(ARID, PathBuf)> = if let Some(group) = group_hint {
+        vec![(group, group_state_dir.join(group.hex()))]
     } else {
-        let mut paths = Vec::new();
-        if signing_dir.exists() {
-            for entry in fs::read_dir(&signing_dir)? {
+        let mut dirs = Vec::new();
+        if group_state_dir.exists() {
+            for entry in fs::read_dir(&group_state_dir)? {
                 let entry = entry?;
                 if entry.file_type()?.is_dir() {
-                    let candidate = entry.path().join("sign_receive.json");
-                    if candidate.exists() {
-                        paths.push(candidate);
+                    let dir_name = entry.file_name();
+                    if let Some(name) = dir_name.to_str() {
+                        if name.len() == 64
+                            && name.chars().all(|c| c.is_ascii_hexdigit())
+                        {
+                            let group_id = ARID::from_hex(name);
+                            dirs.push((group_id, entry.path()));
+                        }
                     }
                 }
             }
         }
-        paths
+        dirs
     };
+
+    let mut candidates = Vec::new();
+    for (group_id, group_dir) in group_dirs {
+        let candidate = group_dir
+            .join("signing")
+            .join(session_id.hex())
+            .join("sign_receive.json");
+        if candidate.exists() {
+            candidates.push((group_id, candidate));
+        }
+    }
 
     if candidates.is_empty() {
         bail!(
-            "No sign_receive.json found for this group; run `frost sign receive` first"
+            "No sign_receive.json found for this session; run `frost sign receive` first"
         );
     }
     if candidates.len() > 1 {
         bail!(
-            "Multiple signing sessions found; specify --session to disambiguate"
+            "Multiple groups contain this session; use --group to disambiguate"
         );
     }
 
-    let path = &candidates[0];
+    let (group_id, path) = &candidates[0];
     let raw: serde_json::Map<String, serde_json::Value> =
         serde_json::from_slice(
             &fs::read(path).with_context(|| {
@@ -341,7 +357,14 @@ fn load_receive_state(
     };
 
     let session_str = get_str("session")?;
-    let session_id = parse_arid_ur(&session_str)?;
+    let session_in_state = parse_arid_ur(&session_str)?;
+    if session_in_state != *session_id {
+        bail!(
+            "Session {} in sign_receive.json does not match requested session {}",
+            session_in_state.ur_string(),
+            session_id.ur_string()
+        );
+    }
     let response_arid = parse_arid_ur(&get_str("response_arid")?)?;
     let target_ur = get_str("target")?;
     let coordinator_ur = get_str("coordinator")?;
@@ -378,7 +401,7 @@ fn load_receive_state(
     }
 
     Ok(ReceiveState {
-        session_id,
+        group_id: *group_id,
         coordinator_doc,
         response_arid,
         target_ur,

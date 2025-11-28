@@ -174,19 +174,12 @@ impl CommandArgs {
             let participant_state = start_state.participants.get(xid).expect(
                 "participant present in start state after earlier validation",
             );
-            let send_to_arid = send_to_arids.get(xid).expect(
-                "send_to_arid present for participant after earlier validation",
-            );
 
             let mut entry = serde_json::Map::new();
             entry.insert(
                 "commitments".to_string(),
                 serde_json::to_value(commits)
                     .context("Failed to serialize commitments")?,
-            );
-            entry.insert(
-                "send_to_arid".to_string(),
-                serde_json::Value::String(send_to_arid.ur_string()),
             );
             entry.insert(
                 "share_arid".to_string(),
@@ -239,6 +232,13 @@ impl CommandArgs {
             .context("Coordinator XID document has no signing keys")?;
         let valid_until =
             Date::with_duration_from_now(Duration::from_secs(60 * 60));
+
+        if is_verbose() {
+            eprintln!(
+                "Dispatching signShare requests to {} participants...",
+                send_to_arids.len()
+            );
+        }
 
         for (participant, send_to_arid) in &send_to_arids {
             let participant_state =
