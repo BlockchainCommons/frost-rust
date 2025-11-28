@@ -175,13 +175,7 @@ impl CommandArgs {
 
         participants.sort();
 
-        let target_ur_opt: Option<String> =
-            sealed_request.extract_optional_object_for_parameter("targetUR")?;
-        let target_envelope = if let Some(raw) = target_ur_opt {
-            Envelope::from_ur_string(&raw).context("Invalid target UR")?
-        } else {
-            sealed_request.object_for_parameter("target")?
-        };
+        let target_envelope = sealed_request.object_for_parameter("target")?;
 
         if self.info {
             let coordinator_name =

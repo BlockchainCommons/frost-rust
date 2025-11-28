@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use bc_components::{ARID, Digest, JSON, XID};
+use bc_components::{ARID, JSON, XID};
 use bc_envelope::prelude::*;
 use clap::Parser;
 use frost_ed25519::{self as frost};
@@ -151,7 +151,6 @@ impl CommandArgs {
         let target_envelope =
             Envelope::from_ur_string(&receive_state.target_ur)
                 .context("Invalid target UR in persisted state")?;
-        let target_digest: Digest = target_envelope.subject().digest();
 
         // Reject path
         let next_share_arid = if self.reject_reason.is_none() {
@@ -189,11 +188,9 @@ impl CommandArgs {
                 next_share_arid.expect("next share ARID present on accept");
 
             let response_body = Envelope::new("signCommitResponse")
-                .add_assertion("group", group_id)
                 .add_assertion("session", session_id)
                 .add_assertion("commitments", CBOR::from(commitments_json))
-                .add_assertion("response_arid", next_share)
-                .add_assertion("targetDigest", target_digest);
+                .add_assertion("response_arid", next_share);
 
             // Persist part1 state
             if !self.preview {

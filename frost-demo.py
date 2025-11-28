@@ -1010,7 +1010,7 @@ frost sign commit --storage $STORAGE --registry {qp(REGISTRIES["dan"])} "${{DAN_
             f"""
 START_PATH=$(ls -t {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/signing/*/start.json | head -n1)
 SESSION_ID=$(jq -r '.session_id' "${{START_PATH}}")
-frost sign collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
+frost sign collect --preview-share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
 """,
             commentary=(
                 "Alice gathers the signCommit responses, aggregates commitments, sends per-participant signShare "

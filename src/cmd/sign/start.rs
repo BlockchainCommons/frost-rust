@@ -85,7 +85,6 @@ impl CommandArgs {
                     self.target_envelope
                 )
             })?;
-        let target_ur = target_envelope.ur_string();
         let _target_digest: Digest = target_envelope.subject().digest();
 
         // Build participant set (signers): group participants only
@@ -140,7 +139,6 @@ impl CommandArgs {
         .with_parameter("group", group_id)
         .with_parameter("session", session_id)
         .with_parameter("target", target_envelope.clone())
-        .with_parameter("targetUR", target_ur.clone())
         .with_parameter("minSigners", group_record.min_signers() as u64)
         .with_date(Date::now())
         .with_parameter("validUntil", valid_until);
@@ -218,7 +216,10 @@ impl CommandArgs {
             "participants".to_string(),
             serde_json::Value::Object(participants_map),
         );
-        root.insert("target".to_string(), serde_json::Value::String(target_ur));
+        root.insert(
+            "target".to_string(),
+            serde_json::Value::String(target_envelope.ur_string()),
+        );
 
         // Build envelope
         let recipient_refs: Vec<&XIDDocument> = recipient_docs.iter().collect();

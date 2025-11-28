@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use bc_components::{ARID, Digest, JSON, XID, XIDProvider};
+use bc_components::{ARID, JSON, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_xid::XIDDocument;
 use clap::Parser;
@@ -42,6 +42,10 @@ pub struct CommandArgs {
     /// Optional group ID to constrain lookup when multiple groups exist
     #[arg(long = "group", value_name = "UR:ARID")]
     group_id: Option<String>,
+
+    /// Print a sample unsealed signShare request (does not affect sending)
+    #[arg(long = "preview-share")]
+    preview_share: bool,
 
     /// Signing session ID to collect
     #[arg(value_name = "SESSION_ID")]
@@ -86,10 +90,6 @@ impl CommandArgs {
             );
         }
 
-        let target_envelope = Envelope::from_ur_string(&start_state.target_ur)
-            .context("Invalid target UR in start.json")?;
-        let target_digest: Digest = target_envelope.subject().digest();
-
         if is_verbose() {
             eprintln!(
                 "Collecting signCommit responses for session {} from {} participants...",
@@ -125,9 +125,7 @@ impl CommandArgs {
                 self.timeout,
                 owner.xid_document(),
                 participant,
-                &group_id,
                 &session_id,
-                &target_digest,
             ) {
                 Ok((participant_commitments, next_request_arid)) => {
                     commitments.insert(*participant, participant_commitments);
@@ -202,18 +200,8 @@ impl CommandArgs {
             serde_json::Value::String(session_id.ur_string()),
         );
         root.insert(
-            "min_signers".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(
-                start_state.min_signers,
-            )),
-        );
-        root.insert(
             "target".to_string(),
             serde_json::Value::String(start_state.target_ur.clone()),
-        );
-        root.insert(
-            "target_digest".to_string(),
-            serde_json::Value::String(target_digest.ur_string()),
         );
         root.insert(
             "commitments".to_string(),
@@ -240,6 +228,7 @@ impl CommandArgs {
             );
         }
 
+        let mut preview_printed = false;
         for (participant, send_to_arid) in &send_to_arids {
             let participant_state =
                 start_state.participants.get(participant).expect(
@@ -264,11 +253,20 @@ impl CommandArgs {
                 owner.xid_document(),
                 &group_id,
                 &session_id,
-                start_state.min_signers,
-                target_digest,
                 participant_state.share_arid,
                 &commitments,
             )?;
+
+            if self.preview_share && !preview_printed {
+                let preview = request.to_envelope(
+                    Some(valid_until),
+                    Some(signer_keys),
+                    None,
+                )?;
+                println!("# signShare preview for {}", participant.ur_string());
+                println!("{}", preview.format());
+                preview_printed = true;
+            }
 
             let sealed_envelope = request.to_envelope_for_recipients(
                 Some(valid_until),
@@ -310,9 +308,7 @@ fn fetch_commit_response(
     timeout: Option<u64>,
     coordinator: &XIDDocument,
     expected_sender: &XID,
-    expected_group_id: &ARID,
     expected_session_id: &ARID,
-    expected_target_digest: &Digest,
 ) -> Result<(frost::round1::SigningCommitments, ARID)> {
     let envelope = runtime.block_on(async {
         client
@@ -362,15 +358,6 @@ fn fetch_commit_response(
         bail!("Unexpected response function: {}", function);
     }
 
-    let response_group: ARID = result.extract_object_for_predicate("group")?;
-    if response_group != *expected_group_id {
-        bail!(
-            "Response group ID {} does not match expected {}",
-            response_group.ur_string(),
-            expected_group_id.ur_string()
-        );
-    }
-
     let response_session: ARID =
         result.extract_object_for_predicate("session")?;
     if response_session != *expected_session_id {
@@ -378,16 +365,6 @@ fn fetch_commit_response(
             "Response session {} does not match expected {}",
             response_session.ur_string(),
             expected_session_id.ur_string()
-        );
-    }
-
-    let response_target: Digest =
-        result.extract_object_for_predicate("targetDigest")?;
-    if response_target != *expected_target_digest {
-        bail!(
-            "Response target digest {} does not match expected {}",
-            response_target.hex(),
-            expected_target_digest.hex()
         );
     }
 
@@ -405,19 +382,14 @@ fn fetch_commit_response(
 
 fn build_sign_share_request(
     sender: &XIDDocument,
-    group_id: &ARID,
+    _group_id: &ARID,
     session_id: &ARID,
-    min_signers: usize,
-    target_digest: Digest,
     response_arid: ARID,
     commitments: &BTreeMap<XID, frost::round1::SigningCommitments>,
 ) -> Result<gstp::SealedRequest> {
     let mut request =
         gstp::SealedRequest::new("signShare", *session_id, sender)
-            .with_parameter("group", *group_id)
             .with_parameter("session", *session_id)
-            .with_parameter("minSigners", min_signers as u64)
-            .with_parameter("targetDigest", target_digest)
             .with_parameter("response_arid", response_arid);
 
     for (participant, commits) in commitments {
@@ -516,11 +488,6 @@ fn load_start_state(
             group_id.ur_string()
         );
     }
-    let min_signers = raw
-        .get("min_signers")
-        .and_then(|v| v.as_u64())
-        .and_then(|v| usize::try_from(v).ok())
-        .context("Missing or invalid min_signers in start.json")?;
     let target_ur = get_str("target")?;
 
     let participants_val = raw
@@ -554,12 +521,7 @@ fn load_start_state(
         );
     }
 
-    Ok(StartState {
-        group_id: *group_id,
-        min_signers,
-        target_ur,
-        participants,
-    })
+    Ok(StartState { group_id: *group_id, target_ur, participants })
 }
 
 struct StartParticipant {
@@ -569,7 +531,6 @@ struct StartParticipant {
 
 struct StartState {
     group_id: ARID,
-    min_signers: usize,
     target_ur: String,
     participants: HashMap<XID, StartParticipant>,
 }
