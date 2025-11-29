@@ -9,20 +9,20 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Participant add with signed public XID documents
    - Persistent JSON storage
 
-2. **DKG Invite Flow** (`frost dkg invite`)
+2. **DKG Invite Flow** (`frost dkg coordinator invite` / `frost dkg participant invite`)
    - `send`: Coordinator creates sealed/preview invites for participants
    - `receive`: Participants fetch and decrypt invites from Hubert or local envelope
    - `respond`: Participants accept or reject, posting response to Hubert
 
-3. **DKG Round 1** (`frost dkg round1`)
+3. **DKG Round 1** (`frost dkg coordinator round1`)
    - `collect`: Coordinator fetches all participant responses from Hubert, validates GSTP responses, extracts Round 1 packages, saves to `collected_round1.json`
 
-4. **DKG Round 2** (`frost dkg round2`)
+4. **DKG Round 2** (`frost dkg coordinator round2` / `frost dkg participant round2`)
    - `send`: Coordinator sends individual sealed messages to each participant containing all Round 1 packages and their unique response ARID (posts to ARIDs participants specified in their invite responses)
    - `respond`: Participants respond with round2 packages, persist round2 secret, include next `response_arid`, and update `listening_at_arid`
    - `collect`: Coordinator fetches/validates Round 2 responses, saves `collected_round2.json`, and updates pending_requests for finalize phase
 
-5. **DKG Finalize** (`frost dkg finalize`)
+5. **DKG Finalize** (`frost dkg coordinator finalize` / `frost dkg participant finalize`)
    - `send`: Coordinator distributes collected Round 2 packages to each participant (with new `responseArid` for finalize respond)
    - `respond`: Participants run part3, produce key/public key packages, persist them, and return finalize response
    - `collect`: Coordinator collects finalize responses, writes `collected_finalize.json`, clears pending requests, and reports the group verifying key (`SigningPublicKey::Ed25519`, UR form `ur:signing-public-key`)
@@ -73,18 +73,18 @@ The `demo-log.md` now runs through finalize collect and participant signShare re
 ### 1. Threshold Signing Flow (status + implementation order)
 
 - Implemented:
-  - `frost sign start` (coordinator) with first-hop ARID, per-participant commit/share ARIDs, full target envelope, preview and Hubert post. Coordinator is no longer auto-added to the participant list; only actual signers are targeted.
-  - `frost sign receive` (participant viewer): fetches/decrypts signCommit, validates sender/group/session/minSigners, shows sorted participants (lexicographic XID), formatted target envelope, persists request details (`sign_receive.json`) including response ARID for follow-up commands; no ARID printed to user (write-once).
-  - `frost sign commit` (participant respond): uses persisted `sign_receive.json` (no Hubert re-fetch), supports `--preview` dry-run, optional `--reject`, derives commitments + next-hop share ARID, posts to coordinator’s commit ARID, and persists part1 state. Response body omits redundant participant field. Coordinator doc is resolved from the registry for encryption.
-- `frost sign collect` (coordinator): aggregates commitments, persists `commitments.json`, dispatches sealed signShare requests (with `--preview-share` option).
-- `frost sign share` (participant): retrieves signShare from listening ARID, validates session/minSigners/commitments/target digest from local state, posts signature share, persists `share.json`, clears listening ARID.
-- Pending: `frost sign finish`.
+   - `frost sign start` (coordinator) with first-hop ARID, per-participant commit/share ARIDs, full target envelope, preview and Hubert post. Coordinator is no longer auto-added to the participant list; only actual signers are targeted.
+   - `frost sign receive` (participant viewer): fetches/decrypts signCommit, validates sender/group/session/minSigners, shows sorted participants (lexicographic XID), formatted target envelope, persists request details (`sign_receive.json`) including response ARID for follow-up commands; no ARID printed to user (write-once).
+   - `frost sign commit` (participant respond): uses persisted `sign_receive.json` (no Hubert re-fetch), supports `--preview` dry-run, optional `--reject`, derives commitments + next-hop share ARID, posts to coordinator’s commit ARID, and persists part1 state. Response body omits redundant participant field. Coordinator doc is resolved from the registry for encryption.
+   - `frost sign collect` (coordinator): aggregates commitments, persists `commitments.json`, dispatches sealed signShare requests (with `--preview-share` option).
+   - `frost sign share` (participant): retrieves signShare from listening ARID, validates session/minSigners/commitments/target digest from local state, posts signature share, persists `share.json`, clears listening ARID.
+   - Pending: `frost sign finish`.
 
 1) ✅ **`frost sign start` (coordinator)**
    - Inputs: group ID; target envelope (assumed already wrapped as needed).
    - Derive: session ID (ARID) and target digest = digest(subject(target envelope)).
    - Generate:
-     - a single first-hop ARID (write-once) where *each* participant retrieves the initial request (print its UR on output, same pattern as `dkg invite send`),
+     - a single first-hop ARID (write-once) where *each* participant retrieves the initial request (print its UR on output, same pattern as `frost dkg coordinator invite send`),
      - per-participant commitment ARIDs (each participant gets a unique ARID to post their commitment; coordinator polls each) to be carried as `response_arid` fields inside the initial request (Hubert pattern: each message tells the peer where to respond),
      - per-participant share ARIDs (where participants post signature shares) to be delivered as the next-hop `response_arid` inside the “signShare” request (again, the message carries the next ARID, not pre-agreed out-of-band).
    - Build initial GSTP “signCommit” request with parameters: group, targetDigest, minSigners/participant list, commitmentCollectArid, per-participant shareArid (individually encrypted to each participant inside the body).
@@ -93,13 +93,13 @@ The `demo-log.md` now runs through finalize collect and participant signShare re
    - Persist session state under `group-state/<group-id>/signing/<session-id>/start.json` (participant list, target digest, ARIDs).
 
 2) ✅ **`frost sign receive` (participant)**
-   - Pattern after `dkg invite receive`: supports Hubert fetch by ARID with optional `--timeout`, or direct envelope UR; `--timeout` requires storage, ARID inputs require storage, `--preview` not needed (non-mutating viewer).
+   - Pattern after `frost dkg participant invite receive`: supports Hubert fetch by ARID with optional `--timeout`, or direct envelope UR; `--timeout` requires storage, ARID inputs require storage, `--preview` not needed (non-mutating viewer).
    - Decrypt “signCommit” with owner private keys; validate function, session ID, group ID, minSigners bounds, and that caller’s XID is present in participant list.
    - Extract and display (with `--info`) key fields: coordinator, participant list, target digest/envelope summary, your commit `response_arid`, and your next-hop share ARID if present. `--no-envelope` mirrors invite receive behavior.
    - Persist request details to `group-state/<group-id>/signing/<session-id>/sign_receive.json` (source envelope UR, group/session IDs, coordinator, minSigners, sorted participants, response ARID, target UR); leave `registry.json` untouched. Do not print response ARID (write-once; persisted instead).
 
 3) ✅ **`frost sign commit` (participant respond)**
-   - Pattern after `dkg invite respond`: requires Hubert storage when posting; `--timeout` only with storage; MUST support `--preview` to show the unsealed response and dry-run (no state changes, no Hubert posts). Include an explicit rejection path (`--reject <reason>`) that posts a GSTP error/decline to the coordinator’s commit ARID and clears local signing state/listening ARID.
+   - Pattern after `frost dkg participant invite respond`: requires Hubert storage when posting; `--timeout` only with storage; MUST support `--preview` to show the unsealed response and dry-run (no state changes, no Hubert posts). Include an explicit rejection path (`--reject <reason>`) that posts a GSTP error/decline to the coordinator’s commit ARID and clears local signing state/listening ARID.
    - Load persisted details from `sign_receive.json` (group/session IDs, coordinator-provided response ARID, target UR, participants, coordinator) instead of re-fetching from Hubert; validate consistency. Coordinator must supply the commit `response_arid`; the participant generates only the next-hop ARID for the coordinator’s forthcoming signShare request.
    - Load participant key package (`contributions.key_package` from registry), run FROST signing part1 (`round1::commit`) to produce signing nonces + commitments; compute/record target digest from the request (use persisted target UR if present to avoid structural drift).
    - Build GSTP response (e.g., `signCommitResponse`) carrying group, session, commitments (JSON/CBOR), share-request ARID for the next hop, and targetDigest; include `peer_continuation` from request, sign with owner keys, and encrypt to coordinator.

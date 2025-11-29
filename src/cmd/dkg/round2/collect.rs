@@ -80,7 +80,7 @@ impl CommandArgs {
         if pending_requests.is_empty() {
             bail!(
                 "No pending requests for this group. \
-                 Did you run 'frost dkg round2 send'?"
+                 Did you run 'frost dkg coordinator round2 send'?"
             );
         }
 

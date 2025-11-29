@@ -77,7 +77,7 @@ impl CommandArgs {
         if pending_requests.is_empty() {
             bail!(
                 "No pending requests for this group. \
-                 Did you run 'frost dkg finalize send'?"
+                 Did you run 'frost dkg coordinator finalize send'?"
             );
         }
 

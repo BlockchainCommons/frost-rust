@@ -12,13 +12,11 @@ use gstp::{SealedResponse, SealedResponseBehavior};
 use rand_core::OsRng;
 use tokio::runtime::Runtime;
 
-use super::{
-    common::{
-        OptionalStorageSelector, build_group_participants, parse_arid_ur,
-        resolve_sender,
-    },
-    receive::decode_invite_details,
+use crate::cmd::dkg::common::{
+    OptionalStorageSelector, build_group_participants, parse_arid_ur,
+    resolve_sender,
 };
+use super::receive::decode_invite_details;
 use crate::{
     cmd::{
         registry::participants_file_path,
@@ -261,7 +259,7 @@ fn resolve_invite_envelope(
     invite: &str,
     timeout: Option<u64>,
 ) -> Result<Envelope> {
-    use super::common::parse_envelope_ur;
+    use crate::cmd::dkg::common::parse_envelope_ur;
 
     if let Some(selection) = selection {
         if let Ok(arid) = parse_arid_ur(invite) {

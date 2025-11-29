@@ -5,32 +5,49 @@ pub mod send;
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
-use super::common;
-
-/// DKG invite operations.
+/// Coordinator DKG invite operations.
 #[derive(Debug, Args)]
 #[group(skip)]
-pub struct CommandArgs {
+pub struct CoordinatorCommandArgs {
     #[command(subcommand)]
-    command: Commands,
+    command: CoordinatorCommands,
 }
 
 #[derive(Debug, Subcommand)]
-enum Commands {
+enum CoordinatorCommands {
     /// Compose or send a DKG invite
     Send(send::CommandArgs),
+}
+
+impl CoordinatorCommandArgs {
+    pub fn exec(self) -> Result<()> {
+        match self.command {
+            CoordinatorCommands::Send(args) => args.exec(),
+        }
+    }
+}
+
+/// Participant DKG invite operations.
+#[derive(Debug, Args)]
+#[group(skip)]
+pub struct ParticipantCommandArgs {
+    #[command(subcommand)]
+    command: ParticipantCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum ParticipantCommands {
     /// Retrieve or inspect a DKG invite
     Receive(receive::CommandArgs),
     /// Respond to a DKG invite
     Respond(respond::CommandArgs),
 }
 
-impl CommandArgs {
+impl ParticipantCommandArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            Commands::Send(args) => args.exec(),
-            Commands::Receive(args) => args.exec(),
-            Commands::Respond(args) => args.exec(),
+            ParticipantCommands::Receive(args) => args.exec(),
+            ParticipantCommands::Respond(args) => args.exec(),
         }
     }
 }

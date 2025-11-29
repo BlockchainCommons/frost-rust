@@ -88,7 +88,7 @@ impl CommandArgs {
         if !collected_path.exists() {
             bail!(
                 "Round 2 responses not found at {}. \
-                 Run 'frost dkg round2 collect' first.",
+                 Run 'frost dkg coordinator round2 collect' first.",
                 collected_path.display()
             );
         }
@@ -138,7 +138,7 @@ impl CommandArgs {
         if pending_requests.is_empty() {
             bail!(
                 "No pending requests for this group. \
-                 Did you run 'frost dkg round2 collect'?"
+                 Did you run 'frost dkg coordinator round2 collect'?"
             );
         }
 

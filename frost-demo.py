@@ -484,7 +484,7 @@ frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
             shell,
             "Composing Alice's preview DKG invite",
             f"""
-ALICE_INVITE_PREVIEW=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --preview --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_PREVIEW=$(frost dkg coordinator invite send --registry {qp(REGISTRIES["alice"])} --preview --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_PREVIEW}}" | envelope format
 """,
             commentary=(
@@ -497,7 +497,7 @@ echo "${{ALICE_INVITE_PREVIEW}}" | envelope format
             shell,
             "Composing Alice's sealed DKG invite",
             f"""
-ALICE_INVITE_SEALED=$(frost dkg invite send --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_SEALED=$(frost dkg coordinator invite send --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_SEALED}}" | envelope format
 echo "${{ALICE_INVITE_SEALED}}" | envelope info
 """,
@@ -518,7 +518,7 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
             shell,
             "Sending sealed DKG invite to Hubert",
             f"""
-ALICE_INVITE_ARID=$(frost dkg invite send --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_ARID=$(frost dkg coordinator invite send --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
@@ -531,8 +531,8 @@ echo "${{ALICE_INVITE_ARID}}"
             shell,
             "Receiving invite from Hubert as Bob",
             f"""
-BOB_INVITE=$(frost dkg invite receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}")
-frost dkg invite receive --info --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
+BOB_INVITE=$(frost dkg participant invite receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{ALICE_INVITE_ARID}}")
+frost dkg participant invite receive --info --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
                 "Retrieve the invite from Hubert using Bob's registry (capturing the envelope), "
@@ -544,7 +544,7 @@ frost dkg invite receive --info --registry {qp(REGISTRIES["bob"])} "${{BOB_INVIT
             shell,
             "Composing Bob's preview invite response",
             f"""
-BOB_RESPONSE_PREVIEW=$(frost dkg invite respond --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
+BOB_RESPONSE_PREVIEW=$(frost dkg participant invite respond --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
 echo "${{BOB_RESPONSE_PREVIEW}}" | envelope format
 """,
             commentary=(
@@ -557,7 +557,7 @@ echo "${{BOB_RESPONSE_PREVIEW}}" | envelope format
             shell,
             "Composing Bob's sealed invite response",
             f"""
-BOB_RESPONSE_SEALED=$(frost dkg invite respond --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
+BOB_RESPONSE_SEALED=$(frost dkg participant invite respond --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}")
 echo "${{BOB_RESPONSE_SEALED}}" | envelope format
 """,
             commentary=(
@@ -569,7 +569,7 @@ echo "${{BOB_RESPONSE_SEALED}}" | envelope format
             shell,
             "Bob responds to the invite",
             f"""
-frost dkg invite respond --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
+frost dkg participant invite respond --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_INVITE}}"
 """,
             commentary=(
                 "Post Bob's sealed response to Hubert using the cached invite envelope."
@@ -580,8 +580,8 @@ frost dkg invite respond --verbose --storage $STORAGE --registry {qp(REGISTRIES[
             shell,
             "Carol and Dan respond to the invite",
             f"""
-frost dkg invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
-frost dkg invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
+frost dkg participant invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_INVITE_ARID}}"
+frost dkg participant invite respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(
                 "Carol and Dan accept the invite from Hubert using their registries, posting their responses to Hubert."
@@ -609,7 +609,7 @@ ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
 echo "Group ID: ${{ALICE_GROUP_ID}}"
 
 # Collect Round 1 responses from all participants
-frost dkg round1 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg coordinator round1 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "As coordinator, Alice fetches each participant's sealed response from Hubert, "
@@ -659,7 +659,7 @@ jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round1.json
             shell,
             "Alice composes a preview Round 2 request",
             f"""
-ROUND2_PREVIEW=$(frost dkg round2 send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
+ROUND2_PREVIEW=$(frost dkg coordinator round2 send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
 echo "${{ROUND2_PREVIEW}}" | envelope format
 """,
             commentary=(
@@ -673,7 +673,7 @@ echo "${{ROUND2_PREVIEW}}" | envelope format
             shell,
             "Alice sends individual Round 2 requests to each participant",
             f"""
-frost dkg round2 send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg coordinator round2 send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "Alice posts a separate sealed Round 2 request for each participant to Hubert. "
@@ -702,7 +702,7 @@ jq '.groups' {qp(REGISTRIES["alice"])}
             "Bob responds to Round 2 request",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg round2 respond --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
+frost dkg participant round2 respond --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
 """,
             commentary=(
                 "Bob fetches the Round 2 request, runs FROST DKG part2 "
@@ -716,7 +716,7 @@ frost dkg round2 respond --preview --storage $STORAGE --timeout $TIMEOUT --regis
             "Bob posts Round 2 response",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
+frost dkg participant round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
 """,
             commentary=(
                 "Bob posts the sealed Round 2 response to the coordinator (no preview output)."
@@ -728,7 +728,7 @@ frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --regis
             "Carol responds to Round 2 request",
             f"""
 CAROL_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["carol"])})
-frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
+frost dkg participant round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
 """,
             commentary=(
                 "Carol processes the Round 2 request with her Round 1 secret and all Round 1 packages, "
@@ -741,7 +741,7 @@ frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --regis
             "Dan responds to Round 2 request",
             f"""
 DAN_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["dan"])})
-frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
+frost dkg participant round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
 """,
             commentary=(
                 "Dan processes the Round 2 request with his Round 1 secret and all Round 1 packages, "
@@ -754,7 +754,7 @@ frost dkg round2 respond --verbose --storage $STORAGE --timeout $TIMEOUT --regis
             "Alice collects Round 2 responses",
             f"""
 ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
-frost dkg round2 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg coordinator round2 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "Alice fetches Round 2 responses from Hubert, validates them, saves collected packages, "
@@ -777,7 +777,7 @@ jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round2.json
             shell,
             "Alice composes a preview finalize request (for first participant)",
             f"""
-FINALIZE_PREVIEW=$(frost dkg finalize send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
+FINALIZE_PREVIEW=$(frost dkg coordinator finalize send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
 echo "${{FINALIZE_PREVIEW}}" | envelope format
 """,
             commentary=(
@@ -790,7 +790,7 @@ echo "${{FINALIZE_PREVIEW}}" | envelope format
             shell,
             "Alice sends finalize packages to each participant",
             f"""
-frost dkg finalize send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg coordinator finalize send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "Alice posts the finalize requests (with each participant's incoming Round 2 packages) "
@@ -805,7 +805,7 @@ frost dkg finalize send --verbose --storage $STORAGE --registry {qp(REGISTRIES["
             "Bob previews finalize response",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg finalize respond --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
+frost dkg participant finalize respond --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}" | envelope format
 """,
             commentary=(
                 "Bob previews his finalize response structure (key packages) without posting."
@@ -817,7 +817,7 @@ frost dkg finalize respond --preview --storage $STORAGE --timeout $TIMEOUT --reg
             "Bob posts finalize response",
             f"""
 BOB_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["bob"])})
-frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
+frost dkg participant finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_GROUP_ID}}"
 """,
             commentary="Bob posts his finalize response with generated key packages.",
         )
@@ -827,7 +827,7 @@ frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --reg
             "Carol posts finalize response",
             f"""
 CAROL_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["carol"])})
-frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
+frost dkg participant finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_GROUP_ID}}"
 """,
             commentary="Carol posts her finalize response with generated key packages.",
         )
@@ -837,7 +837,7 @@ frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --reg
             "Dan posts finalize response",
             f"""
 DAN_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["dan"])})
-frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
+frost dkg participant finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_GROUP_ID}}"
 """,
             commentary="Dan posts his finalize response with generated key packages.",
         )
@@ -847,7 +847,7 @@ frost dkg finalize respond --verbose --storage $STORAGE --timeout $TIMEOUT --reg
             "Alice collects finalize responses",
             f"""
 ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
-frost dkg finalize collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+frost dkg coordinator finalize collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
 """,
             commentary=(
                 "Alice fetches all finalize responses, validates them, saves collected "

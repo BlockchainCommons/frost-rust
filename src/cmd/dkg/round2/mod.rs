@@ -5,30 +5,50 @@ pub mod send;
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
-/// DKG Round 2 operations.
+/// DKG Round 2 operations (coordinator).
 #[derive(Debug, Args)]
 #[group(skip)]
-pub struct CommandArgs {
+pub struct CoordinatorCommandArgs {
     #[command(subcommand)]
-    command: Commands,
+    command: CoordinatorCommands,
 }
 
 #[derive(Debug, Subcommand)]
-enum Commands {
+enum CoordinatorCommands {
     /// Send Round 2 request to all participants (coordinator only)
     Send(send::CommandArgs),
     /// Respond to a Round 2 request (participant only)
-    Respond(respond::CommandArgs),
     /// Collect Round 2 responses from all participants (coordinator only)
     Collect(collect::CommandArgs),
 }
 
-impl CommandArgs {
+impl CoordinatorCommandArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            Commands::Send(args) => args.exec(),
-            Commands::Respond(args) => args.exec(),
-            Commands::Collect(args) => args.exec(),
+            CoordinatorCommands::Send(args) => args.exec(),
+            CoordinatorCommands::Collect(args) => args.exec(),
+        }
+    }
+}
+
+/// DKG Round 2 operations (participant).
+#[derive(Debug, Args)]
+#[group(skip)]
+pub struct ParticipantCommandArgs {
+    #[command(subcommand)]
+    command: ParticipantCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum ParticipantCommands {
+    /// Respond to a Round 2 request (participant only)
+    Respond(respond::CommandArgs),
+}
+
+impl ParticipantCommandArgs {
+    pub fn exec(self) -> Result<()> {
+        match self.command {
+            ParticipantCommands::Respond(args) => args.exec(),
         }
     }
 }

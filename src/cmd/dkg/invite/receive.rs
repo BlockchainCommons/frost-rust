@@ -6,7 +6,7 @@ use clap::Parser;
 use gstp::{SealedRequest, SealedRequestBehavior};
 use tokio::runtime::Runtime;
 
-use super::common::{
+use crate::cmd::dkg::common::{
     OptionalStorageSelector, parse_arid_ur, parse_envelope_ur,
     participant_names_from_registry, resolve_sender, resolve_sender_name,
 };

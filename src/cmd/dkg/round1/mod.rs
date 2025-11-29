@@ -3,10 +3,10 @@ pub mod collect;
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
-/// DKG Round 1 operations.
+/// DKG Round 1 operations (coordinator).
 #[derive(Debug, Args)]
 #[group(skip)]
-pub struct CommandArgs {
+pub struct CoordinatorCommandArgs {
     #[command(subcommand)]
     command: Commands,
 }
@@ -17,7 +17,7 @@ enum Commands {
     Collect(collect::CommandArgs),
 }
 
-impl CommandArgs {
+impl CoordinatorCommandArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
             Commands::Collect(args) => args.exec(),

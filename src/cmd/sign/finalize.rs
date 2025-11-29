@@ -615,7 +615,7 @@ fn load_public_key_package(
         .join("collected_finalize.json");
     if !path.exists() {
         bail!(
-            "collected_finalize.json not found at {}. Run `frost dkg finalize collect` first",
+            "collected_finalize.json not found at {}. Run `frost dkg coordinator finalize collect` first",
             path.display()
         );
     }
