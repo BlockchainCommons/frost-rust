@@ -113,16 +113,19 @@ sequenceDiagram
 
     note over B: sign participant receive
     H->>B: signCommit(B, C, D)
-    note over B: sign participant commit
-    B->>H: signCommitResponse(B)
 
     note over C: sign participant receive
     H->>C: signCommit(B, C, D)
-    note over C: sign participant commit
-    C->>H: signCommitResponse(C)
 
     note over D: sign participant receive
     H->>D: signCommit(B, C, D)
+
+    note over B: sign participant commit
+    B->>H: signCommitResponse(B)
+
+    note over C: sign participant commit
+    C->>H: signCommitResponse(C)
+
     note over D: sign participant commit
     D->>H: signCommitResponse(D)
 
