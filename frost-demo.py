@@ -484,7 +484,7 @@ frost registry owner set --registry "${registry_var}" "${owner_upper}_OWNER_DOC"
             shell,
             "Composing Alice's preview DKG invite",
             f"""
-ALICE_INVITE_PREVIEW=$(frost dkg coordinator invite send --registry {qp(REGISTRIES["alice"])} --preview --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_PREVIEW=$(frost dkg coordinator invite --registry {qp(REGISTRIES["alice"])} --preview --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_PREVIEW}}" | envelope format
 """,
             commentary=(
@@ -497,7 +497,7 @@ echo "${{ALICE_INVITE_PREVIEW}}" | envelope format
             shell,
             "Composing Alice's sealed DKG invite",
             f"""
-ALICE_INVITE_SEALED=$(frost dkg coordinator invite send --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_SEALED=$(frost dkg coordinator invite --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_SEALED}}" | envelope format
 echo "${{ALICE_INVITE_SEALED}}" | envelope info
 """,
@@ -518,7 +518,7 @@ echo "${{ALICE_INVITE_SEALED}}" | envelope info
             shell,
             "Sending sealed DKG invite to Hubert",
             f"""
-ALICE_INVITE_ARID=$(frost dkg coordinator invite send --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
+ALICE_INVITE_ARID=$(frost dkg coordinator invite --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --min-signers 2 --charter "This group will authorize new club editions." Bob Carol Dan)
 echo "${{ALICE_INVITE_ARID}}"
 """,
             commentary=(

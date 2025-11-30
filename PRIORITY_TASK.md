@@ -10,7 +10,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Persistent JSON storage
 
 2. **DKG Invite Flow** (`frost dkg coordinator invite` / `frost dkg participant receive` / `frost dkg participant round1`)
-   - `send`: Coordinator creates sealed/preview invites for participants
+   - `invite`: Coordinator creates sealed/preview invites for participants
    - `receive`: Participants fetch and decrypt invites from Hubert or local envelope
    - `round1`: Participants accept or reject, posting Round 1 response to Hubert
 
@@ -18,11 +18,11 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Coordinator fetches all participant responses from Hubert, validates GSTP responses, extracts Round 1 packages, saves to `collected_round1.json`, and posts individualized Round 2 requests (with optional preview)
 
 4. **DKG Round 2** (`frost dkg coordinator round2` / `frost dkg participant round2`)
-   - `respond`: Participants respond with round2 packages, persist round2 secret, include next `response_arid`, and update `listening_at_arid`
+   - Participant: Responds with round2 packages, persists round2 secret, includes next `response_arid`, and updates `listening_at_arid`
    - Coordinator: Fetches/validates Round 2 responses, saves `collected_round2.json`, and immediately posts finalize requests to each participant (combined collect + finalize dispatch)
 
 5. **DKG Finalize** (`frost dkg coordinator finalize` / `frost dkg participant finalize`)
-   - `respond`: Participants run part3, produce key/public key packages, persist them, and return finalize response
+   - Participant: Runs part3, produces key/public key packages, persists them, and returns finalize response
    - Coordinator: Collects finalize responses, writes `collected_finalize.json`, clears pending requests, and reports the group verifying key (`SigningPublicKey::Ed25519`, UR form `ur:signing-public-key`)
 
 6. **Signing (in progress)**
@@ -80,7 +80,7 @@ The `demo-log.md` now runs through finalize collect and participant signShare re
    - Inputs: group ID; target envelope (assumed already wrapped as needed).
    - Derive: session ID (ARID) and target digest = digest(subject(target envelope)).
    - Generate:
-     - a single first-hop ARID (write-once) where *each* participant retrieves the initial request (print its UR on output, same pattern as `frost dkg coordinator invite send`),
+     - a single first-hop ARID (write-once) where *each* participant retrieves the initial request (print its UR on output, same pattern as `frost dkg coordinator invite`),
      - per-participant commitment ARIDs (each participant gets a unique ARID to post their commitment; coordinator polls each) to be carried as `response_arid` fields inside the initial request (Hubert pattern: each message tells the peer where to respond),
      - per-participant share ARIDs (where participants post signature shares) to be delivered as the next-hop `response_arid` inside the “signShare” request (again, the message carries the next ARID, not pre-agreed out-of-band).
    - Build initial GSTP “signCommit” request with parameters: group, targetDigest, minSigners/participant list, commitmentCollectArid, per-participant shareArid (individually encrypted to each participant inside the body).
