@@ -901,7 +901,7 @@ envelope format < {qp(SIGN_TARGET)}
             "Preview signCommit request (unsealed)",
             f"""
 ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
-frost sign start --preview --target {qp(SIGN_TARGET)} --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}" | envelope format
+frost sign coordinator start --preview --target {qp(SIGN_TARGET)} --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}" | envelope format
 """,
             commentary=(
                 "Preview the unsealed signCommit GSTP request (initial signing hop)."
@@ -913,7 +913,7 @@ frost sign start --preview --target {qp(SIGN_TARGET)} --registry {qp(REGISTRIES[
             "Post signCommit request to Hubert",
             f"""
 ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
-ALICE_SIGN_START_ARID=$(frost sign start --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --target {qp(SIGN_TARGET)} "${{ALICE_GROUP_ID}}")
+ALICE_SIGN_START_ARID=$(frost sign coordinator start --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} --target {qp(SIGN_TARGET)} "${{ALICE_GROUP_ID}}")
 echo "${{ALICE_SIGN_START_ARID}}"
 """,
             commentary=(
@@ -927,7 +927,7 @@ echo "${{ALICE_SIGN_START_ARID}}"
             f"""
 START_PATH=$(ls -t demo/alice/group-state/*/signing/*/start.json | head -n1)
 ALICE_SIGN_START_ARID=$(jq -r '.start_arid' "${{START_PATH}}")
-BOB_SESSION_ID=$(frost sign receive --info --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
+BOB_SESSION_ID=$(frost sign participant receive --info --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
 """,
             commentary=(
                 "Bob fetches and decrypts the signCommit request via Hubert and views the details of the session."
@@ -940,7 +940,7 @@ BOB_SESSION_ID=$(frost sign receive --info --storage $STORAGE --timeout $TIMEOUT
             f"""
 START_PATH=$(ls -t demo/alice/group-state/*/signing/*/start.json | head -n1)
 ALICE_SIGN_START_ARID=$(jq -r '.start_arid' "${{START_PATH}}")
-CAROL_SESSION_ID=$(frost sign receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
+CAROL_SESSION_ID=$(frost sign participant receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
 """,
             commentary=(
                 "Carol fetches and decrypts the signCommit request via Hubert."
@@ -953,7 +953,7 @@ CAROL_SESSION_ID=$(frost sign receive --storage $STORAGE --timeout $TIMEOUT --re
             f"""
 START_PATH=$(ls -t demo/alice/group-state/*/signing/*/start.json | head -n1)
 ALICE_SIGN_START_ARID=$(jq -r '.start_arid' "${{START_PATH}}")
-DAN_SESSION_ID=$(frost sign receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
+DAN_SESSION_ID=$(frost sign participant receive --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{ALICE_SIGN_START_ARID}}" | tee /dev/stderr | tail -n1)
 """,
             commentary=(
                 "Dan fetches and decrypts the signCommit request via Hubert."
@@ -964,7 +964,7 @@ DAN_SESSION_ID=$(frost sign receive --storage $STORAGE --timeout $TIMEOUT --regi
             shell,
             "Bob previews signCommit response",
             f"""
-frost sign commit --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}" | envelope format
+frost sign participant commit --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}" | envelope format
 """,
             commentary=(
                 "Bob dry-runs his signCommit response, showing commitments and next-hop response ARID without posting."
@@ -975,7 +975,7 @@ frost sign commit --preview --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_I
             shell,
             "Bob posts signCommit response",
             f"""
-frost sign commit --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}"
+frost sign participant commit --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}"
 """,
             commentary=(
                 "Bob posts his signCommit response to the coordinator."
@@ -986,7 +986,7 @@ frost sign commit --verbose --storage $STORAGE --registry {qp(REGISTRIES["bob"])
             shell,
             "Carol posts signCommit response",
             f"""
-frost sign commit --storage $STORAGE --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
+frost sign participant commit --storage $STORAGE --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
 """,
             commentary=(
                 "Carol posts her signCommit response to the coordinator."
@@ -997,7 +997,7 @@ frost sign commit --storage $STORAGE --registry {qp(REGISTRIES["carol"])} "${{CA
             shell,
             "Dan posts signCommit response",
             f"""
-frost sign commit --storage $STORAGE --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
+frost sign participant commit --storage $STORAGE --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
 """,
             commentary=(
                 "Dan posts his signCommit response to the coordinator."
@@ -1010,7 +1010,7 @@ frost sign commit --storage $STORAGE --registry {qp(REGISTRIES["dan"])} "${{DAN_
             f"""
 START_PATH=$(ls -t {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/signing/*/start.json | head -n1)
 SESSION_ID=$(jq -r '.session_id' "${{START_PATH}}")
-frost sign collect --preview-share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
+frost sign coordinator collect --preview-share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
 """,
             commentary=(
                 "Alice gathers the signCommit responses, aggregates commitments, sends per-participant signShare "
@@ -1032,7 +1032,7 @@ jq . "${{COMMITMENTS_PATH}}"
             shell,
             "Bob previews signShare response",
             f"""
-frost sign share --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}" | envelope format
+frost sign participant share --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}" | envelope format
 """,
             commentary=(
                 "Bob fetches the signShare request, validates commitments, "
@@ -1044,7 +1044,7 @@ frost sign share --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(
             shell,
             "Bob posts signShare response",
             f"""
-frost sign share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}"
+frost sign participant share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}"
 """,
             commentary="Bob posts his signature share to the coordinator's share collection ARID.",
         )
@@ -1053,7 +1053,7 @@ frost sign share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(
             shell,
             "Carol posts signShare response",
             f"""
-frost sign share --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
+frost sign participant share --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
 """,
             commentary="Carol posts her signature share to the coordinator.",
         )
@@ -1062,7 +1062,7 @@ frost sign share --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES
             shell,
             "Dan posts signShare response",
             f"""
-frost sign share --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
+frost sign participant share --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
 """,
             commentary="Dan posts his signature share to the coordinator.",
         )
@@ -1083,7 +1083,7 @@ jq . "${{SHARE_PATH}}"
             f"""
 START_PATH=$(ls -t {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/signing/*/start.json | head -n1)
 SESSION_ID=$(jq -r '.session_id' "${{START_PATH}}")
-frost sign finalize --preview-finalize --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
+frost sign coordinator finalize --preview-finalize --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
 """,
             commentary=(
                 "Alice collects signature shares, aggregates the signature, and dispatches finalize packages; "
@@ -1095,7 +1095,7 @@ frost sign finalize --preview-finalize --verbose --storage $STORAGE --timeout $T
             shell,
             "Bob attaches aggregated signature",
             f"""
-BOB_ATTACH=$(frost sign attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}")
+BOB_ATTACH=$(frost sign participant attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}")
 echo "${{BOB_ATTACH}}"
 BOB_SIGNED=$(echo "${{BOB_ATTACH}}" | tail -n1)
 echo "${{BOB_SIGNED}}" | envelope format
@@ -1110,7 +1110,7 @@ echo "${{BOB_SIGNED}}" | envelope format
             shell,
             "Carol attaches aggregated signature",
             f"""
-frost sign attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
+frost sign participant attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
 """,
             commentary=(
                 "Carol retrieves her finalize package and attaches the verified group signature."
@@ -1121,7 +1121,7 @@ frost sign attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIE
             shell,
             "Dan attaches aggregated signature",
             f"""
-frost sign attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
+frost sign participant attach --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
 """,
             commentary=(
                 "Dan rebuilds and verifies the signature from his finalize package."

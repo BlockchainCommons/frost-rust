@@ -442,7 +442,7 @@ fn load_start_state(
     }
 
     if candidate_paths.is_empty() {
-        bail!("No sign start state found; run `frost sign start` first");
+        bail!("No sign start state found; run `frost sign coordinator start` first");
     }
     if candidate_paths.len() > 1 {
         bail!(
@@ -531,7 +531,7 @@ fn load_commitments_state(
     let path = dir.join("commitments.json");
     if !path.exists() {
         bail!(
-            "Commitments not found at {}. Run `frost sign collect` first",
+            "Commitments not found at {}. Run `frost sign coordinator collect` first",
             path.display()
         );
     }

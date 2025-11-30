@@ -100,7 +100,7 @@ impl CommandArgs {
         }
 
         let listening_at_arid = group_record.listening_at_arid().context(
-            "No listening ARID for signFinalize. Did you run `frost sign share`?",
+            "No listening ARID for signFinalize. Did you run `frost sign participant share`?",
         )?;
 
         let share_state =
@@ -418,7 +418,7 @@ fn load_receive_state(
 
     if candidates.is_empty() {
         bail!(
-            "No sign_receive.json found for this session; run `frost sign receive` first"
+            "No sign_receive.json found for this session; run `frost sign participant receive` first"
         );
     }
     if candidates.len() > 1 {
@@ -508,7 +508,7 @@ fn load_share_state(
     let path = dir.join("share.json");
     if !path.exists() {
         bail!(
-            "Signature share state not found at {}. Run `frost sign share` first.",
+            "Signature share state not found at {}. Run `frost sign participant share` first.",
             path.display()
         );
     }

@@ -325,7 +325,7 @@ fn load_receive_state(
 
     if candidates.is_empty() {
         bail!(
-            "No sign_receive.json found for this session; run `frost sign receive` first"
+            "No sign_receive.json found for this session; run `frost sign participant receive` first"
         );
     }
     if candidates.len() > 1 {

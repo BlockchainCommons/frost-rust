@@ -116,7 +116,7 @@ impl CommandArgs {
 
         // Ensure registry listening ARID matches persisted commit state
         let listening_at_arid = group_record.listening_at_arid().context(
-            "No listening ARID for signShare. Did you run `frost sign commit`?",
+            "No listening ARID for signShare. Did you run `frost sign participant commit`?",
         )?;
 
         let commit_state =
@@ -524,7 +524,7 @@ fn load_receive_state(
 
     if candidates.is_empty() {
         bail!(
-            "No sign_receive.json found for this session; run `frost sign receive` first"
+            "No sign_receive.json found for this session; run `frost sign participant receive` first"
         );
     }
     if candidates.len() > 1 {
@@ -608,7 +608,7 @@ fn load_commit_state(
     let path = dir.join("commit.json");
     if !path.exists() {
         bail!(
-            "Commit state not found at {}. Run `frost sign commit` first.",
+            "Commit state not found at {}. Run `frost sign participant commit` first.",
             path.display()
         );
     }

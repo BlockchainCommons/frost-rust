@@ -447,7 +447,7 @@ fn load_start_state(
     }
 
     if candidate_paths.is_empty() {
-        bail!("No sign start state found; run `frost sign start` first");
+        bail!("No sign start state found; run `frost sign coordinator start` first");
     }
     if candidate_paths.len() > 1 {
         bail!(
