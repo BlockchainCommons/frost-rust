@@ -23,7 +23,7 @@ use crate::{
         sign::common::signing_state_dir,
         storage::StorageClient,
     },
-    registry::Registry,
+    registry::{GroupRecord, Registry},
 };
 
 /// Attach the finalized group signature to the target (participant).
@@ -76,6 +76,7 @@ impl CommandArgs {
             None => None,
         };
 
+        // Load and validate session state
         let receive_state =
             load_receive_state(&registry_path, &session_id, group_hint)?;
         let group_id = receive_state.group_id;
@@ -84,206 +85,61 @@ impl CommandArgs {
             .context("Group not found in registry")?
             .clone();
 
-        if receive_state.coordinator != *group_record.coordinator().xid() {
-            bail!("Coordinator in session state does not match registry");
-        }
-
-        if !receive_state.participants.contains(&owner.xid()) {
-            bail!("This participant is not part of the signing session");
-        }
-
-        if group_record.min_signers() != receive_state.min_signers {
-            bail!(
-                "Session min_signers {} does not match registry {}",
-                receive_state.min_signers,
-                group_record.min_signers()
-            );
-        }
-
-        let listening_at_arid = group_record.listening_at_arid().context(
-            "No listening ARID for signFinalize. Did you run `frost sign participant share`?",
-        )?;
+        validate_session_state(&receive_state, &group_record, &owner)?;
 
         let share_state =
             load_share_state(&registry_path, &group_id, &session_id)?;
-        if share_state.finalize_arid != listening_at_arid {
-            bail!(
-                "Registry listening ARID ({}) does not match persisted finalize ARID ({})",
-                listening_at_arid.ur_string(),
-                share_state.finalize_arid.ur_string()
-            );
-        }
+        validate_share_state(&share_state, &receive_state, &group_record)?;
 
-        let commit_participants: BTreeSet<XID> =
-            share_state.commitments.keys().copied().collect();
-        let session_participants: BTreeSet<XID> =
-            receive_state.participants.iter().copied().collect();
-        if commit_participants != session_participants {
-            bail!("Commitments do not match session participants");
-        }
+        // Fetch finalize package
+        let sealed_request = fetch_finalize_request(
+            &selection,
+            &share_state.finalize_arid,
+            self.timeout,
+            &owner,
+        )?;
 
-        // Load target envelope and digest from persisted state
+        // Validate request
+        validate_finalize_request(&sealed_request, &session_id, &group_record)?;
+
+        // Extract and validate signature shares
+        let signature_shares_by_xid = parse_signature_shares(&sealed_request)?;
+        validate_signature_shares(
+            &signature_shares_by_xid,
+            &receive_state,
+            &share_state,
+            &owner,
+        )?;
+
+        // Load target envelope
         let target_envelope =
             Envelope::from_ur_string(&receive_state.target_ur).with_context(
                 || "Invalid target envelope UR in persisted state".to_string(),
             )?;
         let target_digest: Digest = target_envelope.subject().digest();
 
-        if is_verbose() {
-            eprintln!("Fetching finalize package from Hubert...");
-        }
-
-        let runtime = Runtime::new()?;
-        let client = runtime.block_on(async {
-            StorageClient::from_selection(selection).await
-        })?;
-
-        let finalize_envelope = runtime.block_on(async {
-            client
-                .get(&share_state.finalize_arid, self.timeout)
-                .await?
-                .context("Finalize package not found in Hubert storage")
-        })?;
-
-        let signer_keys = owner
-            .xid_document()
-            .inception_private_keys()
-            .context("Owner XID document has no inception private keys")?;
-
-        let now = Date::now();
-        let sealed_request = SealedRequest::try_from_envelope(
-            &finalize_envelope,
-            None,
-            Some(now),
-            signer_keys,
-        )?;
-
-        if sealed_request.function() != &Function::from("signFinalize") {
-            bail!("Unexpected request function: {}", sealed_request.function());
-        }
-
-        if sealed_request.id() != session_id {
-            bail!(
-                "Session ID mismatch (request {}, expected {})",
-                sealed_request.id().ur_string(),
-                session_id.ur_string()
-            );
-        }
-
-        let request_session: ARID =
-            sealed_request.extract_object_for_parameter("session")?;
-        if request_session != session_id {
-            bail!(
-                "Request session {} does not match expected {}",
-                request_session.ur_string(),
-                session_id.ur_string()
-            );
-        }
-
-        // Validate sender (coordinator)
-        let expected_coordinator = group_record.coordinator().xid();
-        if sealed_request.sender().xid() != *expected_coordinator {
-            bail!(
-                "Unexpected request sender: {} (expected coordinator {})",
-                sealed_request.sender().xid().ur_string(),
-                expected_coordinator.ur_string()
-            );
-        }
-
-        // Extract and validate signature shares
-        let signature_shares_by_xid = parse_signature_shares(&sealed_request)?;
-
-        if signature_shares_by_xid.len() < receive_state.min_signers {
-            bail!(
-                "Finalize package contains {} signature shares but requires at least {}",
-                signature_shares_by_xid.len(),
-                receive_state.min_signers
-            );
-        }
-
-        let shares_participants: BTreeSet<XID> =
-            signature_shares_by_xid.keys().copied().collect();
-        if shares_participants != session_participants {
-            bail!("Signature share set does not match session participants");
-        }
-
-        if let Some(my_share) = signature_shares_by_xid.get(&owner.xid()) {
-            if my_share != &share_state.signature_share {
-                bail!(
-                    "Finalize package contains a signature share for this participant that does not match local state"
-                );
-            }
-        } else {
-            bail!(
-                "Finalize package is missing this participant's signature share"
-            );
-        }
-
-        // Build identifier mapping and signing package
-        let xid_to_identifier =
-            xid_identifier_map(&receive_state.participants)?;
-        let signing_commitments = commitments_with_identifiers(
-            &share_state.commitments,
-            &xid_to_identifier,
-        )?;
-        let signing_package = frost::SigningPackage::new(
-            signing_commitments,
-            target_digest.data(),
-        );
-
-        let signature_shares_by_identifier = signature_shares_with_identifiers(
-            &signature_shares_by_xid,
-            &xid_to_identifier,
-        )?;
-
-        let public_key_package =
-            load_public_key_package(&registry_path, &group_id)?;
-        let verifying_key =
-            signing_key_from_verifying(public_key_package.verifying_key())?;
-
-        if let Some(existing) = group_record.verifying_key() {
-            if existing != &verifying_key {
-                bail!("Registry verifying key does not match finalize package");
-            }
-        } else {
-            let group_record = registry
-                .group_mut(&group_id)
-                .context("Group not found in registry")?;
-            group_record.set_verifying_key(verifying_key.clone());
-            registry.save(&registry_path)?;
-        }
-
-        let aggregated_signature = frost_ed25519::aggregate(
-            &signing_package,
-            &signature_shares_by_identifier,
-            &public_key_package,
-        )
-        .context("Failed to aggregate signature shares")?;
-
-        let sig_bytes_vec = aggregated_signature.serialize()?;
-        let sig_array: [u8; 64] =
-            sig_bytes_vec.as_slice().try_into().map_err(|_| {
-                anyhow::anyhow!("Aggregated signature is not 64 bytes")
-            })?;
-        let final_signature =
-            bc_components::Signature::ed25519_from_data(sig_array);
-
-        if !verifying_key.verify(&final_signature, target_digest.data()) {
-            bail!(
-                "Aggregated signature failed verification against target digest"
-            );
-        }
-
-        let signed_envelope = target_envelope.clone().add_assertion(
-            bc_envelope::known_values::SIGNED,
-            final_signature.clone(),
-        );
-        signed_envelope
-            .verify_signature_from(&verifying_key)
-            .context(
-                "Aggregated signature did not verify on target envelope",
+        // Aggregate signature
+        let (final_signature, signed_envelope, verifying_key) =
+            aggregate_and_verify_signature(
+                &registry_path,
+                &group_id,
+                &receive_state.participants,
+                &share_state.commitments,
+                &signature_shares_by_xid,
+                &target_envelope,
+                &target_digest,
             )?;
 
+        // Update registry verifying key if needed
+        update_registry_verifying_key(
+            &mut registry,
+            &registry_path,
+            &group_id,
+            &verifying_key,
+            &group_record,
+        )?;
+
+        // Persist final state
         persist_final_state(
             &registry_path,
             &group_id,
@@ -294,7 +150,7 @@ impl CommandArgs {
             &share_state,
         )?;
 
-        // Clear listening ARID now that the finalize package has been consumed
+        // Clear listening ARID
         let group_record = registry
             .group_mut(&group_id)
             .context("Group not found in registry")?;
@@ -306,6 +162,257 @@ impl CommandArgs {
 
         Ok(())
     }
+}
+
+// -----------------------------------------------------------------------------
+// Validation helpers
+// -----------------------------------------------------------------------------
+
+fn validate_session_state(
+    receive_state: &ReceiveState,
+    group_record: &GroupRecord,
+    owner: &crate::registry::OwnerRecord,
+) -> Result<()> {
+    if receive_state.coordinator != *group_record.coordinator().xid() {
+        bail!("Coordinator in session state does not match registry");
+    }
+    if !receive_state.participants.contains(&owner.xid()) {
+        bail!("This participant is not part of the signing session");
+    }
+    if group_record.min_signers() != receive_state.min_signers {
+        bail!(
+            "Session min_signers {} does not match registry {}",
+            receive_state.min_signers,
+            group_record.min_signers()
+        );
+    }
+    Ok(())
+}
+
+fn validate_share_state(
+    share_state: &ShareState,
+    receive_state: &ReceiveState,
+    group_record: &GroupRecord,
+) -> Result<()> {
+    let listening_at_arid = group_record.listening_at_arid().context(
+        "No listening ARID for signFinalize. Did you run `frost sign participant share`?",
+    )?;
+
+    if share_state.finalize_arid != listening_at_arid {
+        bail!(
+            "Registry listening ARID ({}) does not match persisted finalize ARID ({})",
+            listening_at_arid.ur_string(),
+            share_state.finalize_arid.ur_string()
+        );
+    }
+
+    let commit_participants: BTreeSet<XID> =
+        share_state.commitments.keys().copied().collect();
+    let session_participants: BTreeSet<XID> =
+        receive_state.participants.iter().copied().collect();
+    if commit_participants != session_participants {
+        bail!("Commitments do not match session participants");
+    }
+
+    Ok(())
+}
+
+fn validate_finalize_request(
+    sealed_request: &SealedRequest,
+    session_id: &ARID,
+    group_record: &GroupRecord,
+) -> Result<()> {
+    if sealed_request.function() != &Function::from("signFinalize") {
+        bail!("Unexpected request function: {}", sealed_request.function());
+    }
+
+    if sealed_request.id() != *session_id {
+        bail!(
+            "Session ID mismatch (request {}, expected {})",
+            sealed_request.id().ur_string(),
+            session_id.ur_string()
+        );
+    }
+
+    let request_session: ARID =
+        sealed_request.extract_object_for_parameter("session")?;
+    if request_session != *session_id {
+        bail!(
+            "Request session {} does not match expected {}",
+            request_session.ur_string(),
+            session_id.ur_string()
+        );
+    }
+
+    let expected_coordinator = group_record.coordinator().xid();
+    if sealed_request.sender().xid() != *expected_coordinator {
+        bail!(
+            "Unexpected request sender: {} (expected coordinator {})",
+            sealed_request.sender().xid().ur_string(),
+            expected_coordinator.ur_string()
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_signature_shares(
+    signature_shares_by_xid: &BTreeMap<XID, frost::round2::SignatureShare>,
+    receive_state: &ReceiveState,
+    share_state: &ShareState,
+    owner: &crate::registry::OwnerRecord,
+) -> Result<()> {
+    if signature_shares_by_xid.len() < receive_state.min_signers {
+        bail!(
+            "Finalize package contains {} signature shares but requires at least {}",
+            signature_shares_by_xid.len(),
+            receive_state.min_signers
+        );
+    }
+
+    let shares_participants: BTreeSet<XID> =
+        signature_shares_by_xid.keys().copied().collect();
+    let session_participants: BTreeSet<XID> =
+        receive_state.participants.iter().copied().collect();
+    if shares_participants != session_participants {
+        bail!("Signature share set does not match session participants");
+    }
+
+    if let Some(my_share) = signature_shares_by_xid.get(&owner.xid()) {
+        if my_share != &share_state.signature_share {
+            bail!(
+                "Finalize package contains a signature share for this participant that does not match local state"
+            );
+        }
+    } else {
+        bail!("Finalize package is missing this participant's signature share");
+    }
+
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// Fetch helpers
+// -----------------------------------------------------------------------------
+
+fn fetch_finalize_request(
+    selection: &crate::cmd::storage::StorageSelection,
+    finalize_arid: &ARID,
+    timeout: Option<u64>,
+    owner: &crate::registry::OwnerRecord,
+) -> Result<SealedRequest> {
+    if is_verbose() {
+        eprintln!("Fetching finalize package from Hubert...");
+    }
+
+    let runtime = Runtime::new()?;
+    let client = runtime.block_on(async {
+        StorageClient::from_selection(selection.clone()).await
+    })?;
+
+    let finalize_envelope = runtime.block_on(async {
+        client
+            .get(finalize_arid, timeout)
+            .await?
+            .context("Finalize package not found in Hubert storage")
+    })?;
+
+    let signer_keys = owner
+        .xid_document()
+        .inception_private_keys()
+        .context("Owner XID document has no inception private keys")?;
+
+    let now = Date::now();
+    SealedRequest::try_from_envelope(
+        &finalize_envelope,
+        None,
+        Some(now),
+        signer_keys,
+    )
+    .context("Failed to decode finalize request")
+}
+
+// -----------------------------------------------------------------------------
+// FROST aggregation
+// -----------------------------------------------------------------------------
+
+fn aggregate_and_verify_signature(
+    registry_path: &Path,
+    group_id: &ARID,
+    participants: &[XID],
+    commitments: &BTreeMap<XID, frost::round1::SigningCommitments>,
+    signature_shares_by_xid: &BTreeMap<XID, frost::round2::SignatureShare>,
+    target_envelope: &Envelope,
+    target_digest: &Digest,
+) -> Result<(
+    bc_components::Signature,
+    Envelope,
+    bc_components::SigningPublicKey,
+)> {
+    let xid_to_identifier = xid_identifier_map(participants)?;
+    let signing_commitments =
+        commitments_with_identifiers(commitments, &xid_to_identifier)?;
+    let signing_package =
+        frost::SigningPackage::new(signing_commitments, target_digest.data());
+
+    let signature_shares_by_identifier = signature_shares_with_identifiers(
+        signature_shares_by_xid,
+        &xid_to_identifier,
+    )?;
+
+    let public_key_package = load_public_key_package(registry_path, group_id)?;
+    let verifying_key =
+        signing_key_from_verifying(public_key_package.verifying_key())?;
+
+    let aggregated_signature = frost_ed25519::aggregate(
+        &signing_package,
+        &signature_shares_by_identifier,
+        &public_key_package,
+    )
+    .context("Failed to aggregate signature shares")?;
+
+    let sig_bytes_vec = aggregated_signature.serialize()?;
+    let sig_array: [u8; 64] = sig_bytes_vec
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Aggregated signature is not 64 bytes"))?;
+    let final_signature =
+        bc_components::Signature::ed25519_from_data(sig_array);
+
+    if !verifying_key.verify(&final_signature, target_digest.data()) {
+        bail!("Aggregated signature failed verification against target digest");
+    }
+
+    let signed_envelope = target_envelope.clone().add_assertion(
+        bc_envelope::known_values::SIGNED,
+        final_signature.clone(),
+    );
+    signed_envelope
+        .verify_signature_from(&verifying_key)
+        .context("Aggregated signature did not verify on target envelope")?;
+
+    Ok((final_signature, signed_envelope, verifying_key))
+}
+
+fn update_registry_verifying_key(
+    registry: &mut Registry,
+    registry_path: &Path,
+    group_id: &ARID,
+    verifying_key: &bc_components::SigningPublicKey,
+    group_record: &GroupRecord,
+) -> Result<()> {
+    if let Some(existing) = group_record.verifying_key() {
+        if existing != verifying_key {
+            bail!("Registry verifying key does not match finalize package");
+        }
+    } else {
+        let group_record = registry
+            .group_mut(group_id)
+            .context("Group not found in registry")?;
+        group_record.set_verifying_key(verifying_key.clone());
+        registry.save(registry_path)?;
+    }
+    Ok(())
 }
 
 fn parse_signature_shares(
