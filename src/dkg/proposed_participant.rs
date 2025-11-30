@@ -29,9 +29,9 @@ impl DkgProposedParticipant {
 
     pub fn xid_document(&self) -> &XIDDocument { &self.document }
 
-    pub fn xid_doc_ur(&self) -> &String { &self.ur_string }
+    pub fn xid_document_ur(&self) -> &String { &self.ur_string }
 
-    pub fn xid_doc_envelope(&self) -> &Envelope { &self.envelope }
+    pub fn xid_document_envelope(&self) -> &Envelope { &self.envelope }
 
     pub fn response_arid(&self) -> ARID { self.response_arid }
 }

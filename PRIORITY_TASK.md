@@ -38,9 +38,18 @@ The struct name uses unusual casing (`DkG`). Standard Rust style would be `DkgPr
 - `src/dkg/group_invite.rs`
 - `src/lib.rs` (re-export)
 
-#### b) Variable naming inconsistency
-- `xid_document` vs `xid_doc` — pick one and use consistently
-- `response_arid` vs `next_response_arid` — clarify naming convention for ARID roles
+#### b) Variable naming inconsistency ✅
+
+**`xid_document` vs `xid_doc`**: Fixed. Renamed methods and variables to use consistent `xid_document` prefix:
+- `xid_doc_ur()` → `xid_document_ur()`
+- `xid_doc_envelope()` → `xid_document_envelope()`
+- Local variable `xid_doc_envelope` → `xid_document_envelope`
+
+**`response_arid` vs `next_response_arid`**: These are correctly named for their distinct semantic roles:
+- `response_arid` — the ARID where this party should post their response
+- `next_response_arid` — the ARID this party includes to tell the other side where to send the *next* message
+
+No change needed; the naming reflects the protocol's message flow.
 
 ---
 

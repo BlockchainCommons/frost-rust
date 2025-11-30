@@ -103,7 +103,7 @@ impl DkgInvite {
                 .with_date(self.date())
                 .with_parameter("validUntil", self.valid_until());
         for participant in self.participants() {
-            let xid_doc_envelope = participant.xid_doc_envelope();
+            let xid_document_envelope = participant.xid_document_envelope();
             let response_arid = participant.response_arid();
             let encryption_key = participant
                 .xid_document()
@@ -116,7 +116,7 @@ impl DkgInvite {
             let encrypted_response_arid = response_arid
                 .to_envelope()
                 .encrypt_to_recipient(encryption_key);
-            let participant = xid_doc_envelope
+            let participant = xid_document_envelope
                 .wrap()
                 .add_assertion("response_arid", encrypted_response_arid);
             request = request.with_parameter("participant", participant);
@@ -310,9 +310,9 @@ impl DkgInvitation {
         }
 
         for participant in participant_objects {
-            let xid_doc_envelope = participant.try_unwrap()?;
+            let xid_document_envelope = participant.try_unwrap()?;
             let xid_document = XIDDocument::from_envelope(
-                &xid_doc_envelope,
+                &xid_document_envelope,
                 None,
                 XIDVerifySignature::Inception,
             )?;

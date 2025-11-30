@@ -223,9 +223,9 @@ pub fn decode_invite_details(
     let mut participant_docs = Vec::new();
     let mut response_arid: Option<ARID> = None;
     for participant in participant_objects {
-        let xid_doc_envelope = participant.try_unwrap()?;
+        let xid_document_envelope = participant.try_unwrap()?;
         let xid_document = XIDDocument::from_envelope(
-            &xid_doc_envelope,
+            &xid_document_envelope,
             None,
             XIDVerifySignature::Inception,
         )?;
