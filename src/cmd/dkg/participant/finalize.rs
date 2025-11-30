@@ -343,7 +343,8 @@ fn build_response_body(
     let key_json = JSON::from_data(serde_json::to_vec(key_package)?);
     let pub_json = JSON::from_data(serde_json::to_vec(public_key_package)?);
 
-    Ok(Envelope::new("dkgFinalizeResponse")
+    Ok(Envelope::unit()
+        .add_type("dkgFinalizeResponse")
         .add_assertion("group", *group_id)
         .add_assertion("participant", *participant)
         .add_assertion("key_package", CBOR::from(key_json))

@@ -394,7 +394,8 @@ fn build_response_body(
             })
             .collect();
 
-    let mut envelope = Envelope::new("dkgRound2Response")
+    let mut envelope = Envelope::unit()
+        .add_type("dkgRound2Response")
         .add_assertion("group", *group_id)
         .add_assertion("participant", *participant_xid)
         .add_assertion("response_arid", *response_arid);

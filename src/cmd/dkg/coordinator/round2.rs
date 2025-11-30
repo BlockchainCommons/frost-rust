@@ -350,10 +350,9 @@ fn fetch_round2_response(
 
     let result = sealed.result().context("Response has no result envelope")?;
 
-    let function: String = result.extract_subject()?;
-    if function != "dkgRound2Response" {
-        bail!("Unexpected response function: {}", function);
-    }
+    result
+        .check_subject_unit()?
+        .check_type("dkgRound2Response")?;
 
     let group_id: ARID = result.extract_object_for_predicate("group")?;
     if &group_id != expected_group {

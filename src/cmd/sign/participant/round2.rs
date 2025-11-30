@@ -272,7 +272,8 @@ impl CommandArgs {
         )
         .map_err(|e| anyhow::anyhow!("FROST signing failed: {}", e))?;
 
-        let response_body = Envelope::new("signRound2Response")
+        let response_body = Envelope::unit()
+            .add_type("signRound2Response")
             .add_assertion("session", session_id)
             .add_assertion(
                 "signature_share",

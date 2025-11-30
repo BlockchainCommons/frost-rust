@@ -350,10 +350,9 @@ fn fetch_share_response(
         .result()
         .context("Response has no result envelope")?;
 
-    let function: String = result.extract_subject()?;
-    if function != "signRound2Response" {
-        bail!("Unexpected response function: {}", function);
-    }
+    result
+        .check_subject_unit()?
+        .check_type("signRound2Response")?;
 
     let response_session: ARID =
         result.extract_object_for_predicate("session")?;

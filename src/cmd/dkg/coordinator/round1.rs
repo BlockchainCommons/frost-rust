@@ -509,10 +509,9 @@ fn validate_round1_response(
     result: &Envelope,
     expected_group_id: &ARID,
 ) -> Result<()> {
-    let function: String = result.extract_subject()?;
-    if function != "dkgRound1Response" {
-        bail!("Unexpected response function: {}", function);
-    }
+    result
+        .check_subject_unit()?
+        .check_type("dkgRound1Response")?;
 
     let group_id: ARID = result.extract_object_for_predicate("group")?;
     if group_id != *expected_group_id {

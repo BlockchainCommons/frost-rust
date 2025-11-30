@@ -286,10 +286,9 @@ fn fetch_finalize_response(
     }
 
     let result = sealed.result().context("Finalize response has no result")?;
-    let function: String = result.extract_subject()?;
-    if function != "dkgFinalizeResponse" {
-        bail!("Unexpected response function: {}", function);
-    }
+    result
+        .check_subject_unit()?
+        .check_type("dkgFinalizeResponse")?;
 
     let group_id: ARID = result.extract_object_for_predicate("group")?;
     if &group_id != expected_group {
