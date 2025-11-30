@@ -94,7 +94,18 @@ Several `exec()` methods exceed 100 lines and mix multiple concerns:
 
 ---
 
-### 5. Low Priority: Type Organization
+### 5. Low Priority: Type Organization ✅
 
-- `ReceiveState`, `ShareState`, and similar structs are defined at file bottom; consider grouping or extracting to a `state.rs` module
-- Evaluate whether `src/cmd/common.rs` should exist for cross-cutting utilities shared by both `dkg` and `sign` subcommands
+**Cross-cutting utilities consolidated:**
+- Created `src/cmd/common.rs` with shared utilities:
+  - `parse_arid_ur()` — ARID UR parsing
+  - `OptionalStorageSelector` — storage backend CLI args
+  - `signing_key_from_verifying()` — FROST verifying key conversion
+  - `group_state_dir()` — group state directory path
+- `src/cmd/dkg/common.rs` now re-exports from `cmd::common` and keeps DKG-specific utilities (participant resolution, group building, name formatting)
+- `src/cmd/sign/common.rs` updated to use `group_state_dir()` from `cmd::common`, contains signing-specific `signing_state_dir()` functions
+
+**State structs (`ReceiveState`, `ShareState`, etc.):**
+- Kept in their respective files (finalize.rs, round1.rs, round2.rs)
+- These are phase-specific with different fields per phase; moving them would add indirection without benefit
+- Each file now has organized sections (Context/result types, Validation, etc.) from earlier refactoring

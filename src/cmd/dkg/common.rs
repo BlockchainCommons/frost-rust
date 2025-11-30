@@ -1,59 +1,30 @@
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+//! DKG-specific utilities.
+//!
+//! This module contains utilities specific to DKG operations, such as
+//! participant resolution and group participant building.
+//!
+//! For cross-cutting utilities shared with signing, see [`crate::cmd::common`].
 
-use anyhow::{Context, Result, anyhow, bail};
-use bc_components::{
-    ARID, Ed25519PublicKey, SigningPublicKey, XID, XIDProvider,
-};
+use std::collections::HashSet;
+
+use anyhow::{Context, Result, bail};
+use bc_components::{XID, XIDProvider};
 use bc_envelope::prelude::*;
 use bc_ur::prelude::UR;
 use bc_xid::XIDDocument;
-use clap::Args;
 
-use super::super::storage::{
-    StorageBackend, StorageSelection, StorageSelector,
+// Re-export cross-cutting utilities for convenience
+pub use super::super::common::{
+    OptionalStorageSelector, group_state_dir, parse_arid_ur,
+    signing_key_from_verifying,
 };
 use crate::registry::{
     GroupParticipant, OwnerRecord, ParticipantRecord, Registry,
 };
 
-/// Optional storage backend selection for commands that can work with or
-/// without Hubert.
-#[derive(Debug, Clone, Args)]
-pub struct OptionalStorageSelector {
-    /// Storage backend to use
-    #[arg(long, short, value_enum)]
-    storage: Option<StorageBackend>,
-
-    /// Server/IPFS host (for --storage server)
-    #[arg(long)]
-    host: Option<String>,
-
-    /// Port (for --storage server, --storage ipfs, or --storage hybrid)
-    #[arg(long)]
-    port: Option<u16>,
-}
-
-impl OptionalStorageSelector {
-    pub fn resolve(&self) -> Result<Option<StorageSelection>> {
-        if let Some(storage) = self.storage {
-            let selector = StorageSelector {
-                storage,
-                host: self.host.clone(),
-                port: self.port,
-            };
-            return Ok(Some(selector.resolve()?));
-        }
-
-        if self.host.is_some() || self.port.is_some() {
-            bail!("--host/--port require --storage to select a Hubert backend");
-        }
-
-        Ok(None)
-    }
-}
+// -----------------------------------------------------------------------------
+// Participant resolution
+// -----------------------------------------------------------------------------
 
 pub fn resolve_participants(
     registry: &Registry,
@@ -144,6 +115,10 @@ pub fn resolve_sender_name(
     })
 }
 
+// -----------------------------------------------------------------------------
+// Group participant building
+// -----------------------------------------------------------------------------
+
 pub fn build_group_participants(
     registry: &Registry,
     owner: &OwnerRecord,
@@ -172,6 +147,10 @@ pub fn group_participant_from_registry(
     }
     Ok(GroupParticipant::new(xid))
 }
+
+// -----------------------------------------------------------------------------
+// Name formatting
+// -----------------------------------------------------------------------------
 
 pub fn format_name_with_owner_marker(name: String, is_owner: bool) -> String {
     if is_owner { format!("* {name}") } else { name }
@@ -211,6 +190,10 @@ pub fn participant_names_from_registry(
         .collect()
 }
 
+// -----------------------------------------------------------------------------
+// Envelope parsing
+// -----------------------------------------------------------------------------
+
 pub fn parse_envelope_ur(input: &str) -> Result<Envelope> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -224,44 +207,4 @@ pub fn parse_envelope_ur(input: &str) -> Result<Envelope> {
     Envelope::from_tagged_cbor(ur.cbor())
         .or_else(|_| Envelope::from_untagged_cbor(ur.cbor()))
         .context("Invalid envelope payload")
-}
-
-pub fn parse_arid_ur(input: &str) -> Result<ARID> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        bail!("Invite ARID is required");
-    }
-    let ur = UR::from_ur_string(trimmed)
-        .with_context(|| format!("Failed to parse ARID UR: {trimmed}"))?;
-    if ur.ur_type_str() != "arid" {
-        bail!("Expected a ur:arid, found ur:{}", ur.ur_type_str());
-    }
-    let cbor = ur.cbor();
-    ARID::try_from(cbor.clone()).or_else(|_| {
-        let bytes =
-            CBOR::try_into_byte_string(cbor).context("Invalid ARID payload")?;
-        ARID::from_data_ref(bytes).context("Invalid ARID payload")
-    })
-}
-
-/// Returns the group state directory for a DKG group.
-/// Path: `{registry_dir}/group-state/{group_id.hex()}`
-pub fn group_state_dir(registry_path: &Path, group_id: &ARID) -> PathBuf {
-    let base = registry_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("group-state").join(group_id.hex())
-}
-
-/// Converts a FROST Ed25519 verifying key to a `SigningPublicKey`.
-pub fn signing_key_from_verifying(
-    verifying_key: &frost_ed25519::VerifyingKey,
-) -> Result<SigningPublicKey> {
-    let bytes = verifying_key
-        .serialize()
-        .map_err(|e| anyhow!("Failed to serialize verifying key: {e}"))?;
-    let ed25519 = Ed25519PublicKey::from_data_ref(bytes)
-        .context("Group verifying key is not a valid Ed25519 public key")?;
-    Ok(SigningPublicKey::from_ed25519(ed25519))
 }

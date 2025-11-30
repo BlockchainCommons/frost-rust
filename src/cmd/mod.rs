@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 pub mod check;
+pub mod common;
 pub mod dkg;
 pub mod registry;
 pub mod sign;
