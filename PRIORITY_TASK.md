@@ -57,17 +57,23 @@ No change needed; the naming reflects the protocol's message flow.
 
 Several `exec()` methods exceed 100 lines and mix multiple concerns:
 
-| File                                   | Lines | Recommendation                                            |
-| -------------------------------------- | ----- | --------------------------------------------------------- |
-| `src/cmd/sign/participant/finalize.rs` | ✅    | Refactored into helper functions                          |
-| `src/cmd/sign/coordinator/invite.rs`   | ~170  | Extract: request building, state persistence, sending     |
-| `src/cmd/dkg/coordinator/round1.rs`    | ~100  | Extract: collection phase, dispatch phase                 |
+| File                                   | Lines | Recommendation                            |
+| -------------------------------------- | ----- | ----------------------------------------- |
+| `src/cmd/sign/participant/finalize.rs` | ✅     | Refactored into helper functions          |
+| `src/cmd/sign/coordinator/invite.rs`   | ✅     | Refactored into helper functions          |
+| `src/cmd/dkg/coordinator/round1.rs`    | ~100  | Extract: collection phase, dispatch phase |
 
 **`sign/participant/finalize.rs` refactoring (completed):**
 - `exec()` reduced from ~220 lines to ~75 lines
 - Extracted validation helpers: `validate_session_state()`, `validate_share_state()`, `validate_finalize_request()`, `validate_signature_shares()`
 - Extracted fetch helper: `fetch_finalize_request()`
 - Extracted FROST aggregation: `aggregate_and_verify_signature()`, `update_registry_verifying_key()`
+
+**`sign/coordinator/invite.rs` refactoring (completed):**
+- `exec()` reduced from ~170 lines to ~65 lines
+- Introduced `SessionArids` struct to manage session/start/commit/share ARIDs
+- Introduced `SignInviteContext` struct to bundle request-building parameters
+- Extracted helpers: `validate_coordinator()`, `gather_recipient_documents()`, `build_sign_invite_request()`, `build_session_state_json()`, `persist_session_state()`, `post_to_hubert()`
 
 ---
 
