@@ -343,7 +343,7 @@ fn fetch_share_response(
             .ok()
             .and_then(|e| e.extract_subject::<String>().ok())
             .unwrap_or_else(|| "unknown reason".to_string());
-        bail!("Participant rejected signShare: {}", reason);
+        bail!("Participant rejected signRound2: {}", reason);
     }
 
     let result = sealed_response

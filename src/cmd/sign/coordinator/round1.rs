@@ -24,7 +24,7 @@ use crate::{
     registry::Registry,
 };
 
-/// Collect signInvite responses and dispatch signShare requests (coordinator).
+/// Collect signInvite responses and dispatch signRound2 requests (coordinator).
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct CommandArgs {
@@ -43,7 +43,7 @@ pub struct CommandArgs {
     #[arg(long = "group", value_name = "UR:ARID")]
     group_id: Option<String>,
 
-    /// Print a sample unsealed signShare request (does not affect sending)
+    /// Print a sample unsealed signRound2 request (does not affect sending)
     #[arg(long = "preview-share")]
     preview_share: bool,
 
@@ -213,7 +213,7 @@ impl CommandArgs {
                 format!("Failed to write {}", commitments_path.display())
             })?;
 
-        // Build and send signShare requests
+        // Build and send signRound2 requests
         let signer_keys = owner
             .xid_document()
             .inception_private_keys()
@@ -223,7 +223,7 @@ impl CommandArgs {
 
         if is_verbose() {
             eprintln!(
-                "Dispatching signShare requests to {} participants...",
+                "Dispatching signRound2 requests to {} participants...",
                 send_to_arids.len()
             );
         }
@@ -263,7 +263,10 @@ impl CommandArgs {
                     Some(signer_keys),
                     None,
                 )?;
-                println!("# signShare preview for {}", participant.ur_string());
+                println!(
+                    "# signRound2 preview for {}",
+                    participant.ur_string()
+                );
                 println!("{}", preview.format());
                 preview_printed = true;
             }
@@ -292,7 +295,7 @@ impl CommandArgs {
                 commitments.len(),
                 display_path.display()
             );
-            eprintln!("Dispatched {} signShare requests.", commitments.len());
+            eprintln!("Dispatched {} signRound2 requests.", commitments.len());
         } else {
             println!("{}", display_path.display());
         }
@@ -388,7 +391,7 @@ fn build_sign_share_request(
     commitments: &BTreeMap<XID, frost::round1::SigningCommitments>,
 ) -> Result<gstp::SealedRequest> {
     let mut request =
-        gstp::SealedRequest::new("signShare", *session_id, sender)
+        gstp::SealedRequest::new("signRound2", *session_id, sender)
             .with_parameter("session", *session_id)
             .with_parameter("response_arid", response_arid);
 

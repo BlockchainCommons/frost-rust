@@ -26,7 +26,7 @@ use crate::{
     registry::Registry,
 };
 
-/// Respond to a signShare request (participant).
+/// Respond to a signRound2 request (participant).
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct CommandArgs {
@@ -116,7 +116,7 @@ impl CommandArgs {
 
         // Ensure registry listening ARID matches persisted commit state
         let listening_at_arid = group_record.listening_at_arid().context(
-            "No listening ARID for signShare. Did you run `frost sign participant commit`?",
+            "No listening ARID for signRound2. Did you run `frost sign participant commit`?",
         )?;
 
         let commit_state =
@@ -156,7 +156,7 @@ impl CommandArgs {
         let target_digest: Digest = target_envelope.subject().digest();
 
         if is_verbose() {
-            eprintln!("Fetching signShare request from Hubert...");
+            eprintln!("Fetching signRound2 request from Hubert...");
         }
 
         let runtime = Runtime::new()?;
@@ -168,7 +168,7 @@ impl CommandArgs {
             client
                 .get(&listening_at_arid, self.timeout)
                 .await?
-                .context("signShare request not found in Hubert storage")
+                .context("signRound2 request not found in Hubert storage")
         })?;
 
         let signer_private_keys = owner
@@ -184,7 +184,7 @@ impl CommandArgs {
             signer_private_keys,
         )?;
 
-        if sealed_request.function() != &Function::from("signShare") {
+        if sealed_request.function() != &Function::from("signRound2") {
             bail!("Unexpected request function: {}", sealed_request.function());
         }
 
@@ -214,11 +214,11 @@ impl CommandArgs {
             parse_commitments(&sealed_request, &receive_state)?;
 
         let my_commitments = commitments_by_xid.get(&owner.xid()).context(
-            "signShare request missing commitments for this participant",
+            "signRound2 request missing commitments for this participant",
         )?;
         if *my_commitments != commit_state.signing_commitments {
             bail!(
-                "signShare request commitments do not match locally stored commitments"
+                "signRound2 request commitments do not match locally stored commitments"
             );
         }
 
@@ -248,7 +248,7 @@ impl CommandArgs {
 
         if commitments_by_xid.len() < receive_state.min_signers {
             bail!(
-                "signShare request contained {} commitments but requires at least {} signers",
+                "signRound2 request contained {} commitments but requires at least {} signers",
                 commitments_by_xid.len(),
                 receive_state.min_signers
             );
@@ -368,7 +368,7 @@ fn parse_commitments(
     }
 
     if commitments.is_empty() {
-        bail!("signShare request contains no commitments");
+        bail!("signRound2 request contains no commitments");
     }
 
     // Validate expected participant set
@@ -386,7 +386,7 @@ fn parse_commitments(
             .collect();
         if !missing.is_empty() || !extra.is_empty() {
             bail!(
-                "signShare commitments do not match session participants (missing: {}; extra: {})",
+                "signRound2 commitments do not match session participants (missing: {}; extra: {})",
                 missing.join(", "),
                 extra.join(", ")
             );

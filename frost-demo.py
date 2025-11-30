@@ -947,14 +947,14 @@ frost sign participant round1 --storage $STORAGE --registry {qp(REGISTRIES["dan"
 
         run_step(
             shell,
-            "Alice collects commitments and posts signShare requests",
+            "Alice collects commitments and posts signRound2 requests",
             f"""
 START_PATH=$(ls -t {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/signing/*/start.json | head -n1)
 SESSION_ID=$(jq -r '.session_id' "${{START_PATH}}")
 frost sign coordinator round1 --preview-share --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{SESSION_ID}}"
 """,
             commentary=(
-                "Alice gathers the signInvite responses, aggregates commitments, sends per-participant signShare "
+                "Alice gathers the signInvite responses, aggregates commitments, sends per-participant signRound2 "
                 "requests, and tells participants where to post their signature shares (share ARIDs)."
             ),
         )
@@ -971,19 +971,19 @@ jq . "${{COMMITMENTS_PATH}}"
 
         run_step(
             shell,
-            "Bob previews signShare response",
+            "Bob previews signShareResponse",
             f"""
 frost sign participant round2 --preview --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}" | envelope format
 """,
             commentary=(
-                "Bob fetches the signShare request, validates commitments, "
+                "Bob fetches the signRound2 request, validates commitments, "
                 "computes his signature share, and previews the response without posting."
             ),
         )
 
         run_step(
             shell,
-            "Bob posts signShare response",
+            "Bob posts signShareResponse",
             f"""
 frost sign participant round2 --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["bob"])} "${{BOB_SESSION_ID}}"
 """,
@@ -992,7 +992,7 @@ frost sign participant round2 --verbose --storage $STORAGE --timeout $TIMEOUT --
 
         run_step(
             shell,
-            "Carol posts signShare response",
+            "Carol posts signShareResponse",
             f"""
 frost sign participant round2 --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["carol"])} "${{CAROL_SESSION_ID}}"
 """,
@@ -1001,7 +1001,7 @@ frost sign participant round2 --storage $STORAGE --timeout $TIMEOUT --registry {
 
         run_step(
             shell,
-            "Dan posts signShare response",
+            "Dan posts signShareResponse",
             f"""
 frost sign participant round2 --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["dan"])} "${{DAN_SESSION_ID}}"
 """,
