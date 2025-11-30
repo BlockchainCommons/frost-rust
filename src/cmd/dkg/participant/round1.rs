@@ -138,8 +138,7 @@ impl CommandArgs {
         // Only generate actual round1 state if we're going to post to storage
         let is_posting = selection.is_some();
 
-        #[allow(unused_variables)]
-        let (response_body, round1_package_opt) = if self
+        let (response_body, _round1_package_opt) = if self
             .reject_reason
             .is_none()
             && is_posting

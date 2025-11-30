@@ -1,6 +1,6 @@
-pub mod collect;
-pub mod finalize;
-pub mod start;
+pub mod invite;
+pub mod round1;
+pub mod round2;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -15,20 +15,20 @@ pub struct CommandArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Start a threshold signing session (coordinator only)
-    Start(start::CommandArgs),
-    /// Collect signCommit responses and send signShare requests (coordinator)
-    Collect(collect::CommandArgs),
-    /// Collect signature shares and fan out finalize packages (coordinator)
-    Finalize(finalize::CommandArgs),
+    /// Start a threshold signing session (coordinator)
+    Invite(invite::CommandArgs),
+    /// Collect Round 1 (commit) responses and send Round 2 (share) requests
+    Round1(round1::CommandArgs),
+    /// Collect Round 2 (share) responses and send finalize packages
+    Round2(round2::CommandArgs),
 }
 
 impl CommandArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
-            Commands::Start(args) => args.exec(),
-            Commands::Collect(args) => args.exec(),
-            Commands::Finalize(args) => args.exec(),
+            Commands::Invite(args) => args.exec(),
+            Commands::Round1(args) => args.exec(),
+            Commands::Round2(args) => args.exec(),
         }
     }
 }

@@ -28,9 +28,7 @@ impl ParticipantRecord {
     pub fn pet_name(&self) -> Option<&str> { self.pet_name.as_deref() }
     pub fn public_keys(&self) -> &PublicKeys { &self.public_keys }
     pub fn xid(&self) -> XID { self.xid_document.xid() }
-    #[allow(dead_code)]
     pub fn xid_document(&self) -> &XIDDocument { &self.xid_document }
-    #[allow(dead_code)]
     pub fn xid_document_ur(&self) -> &str { &self.xid_document_ur }
 
     fn build_from_parts(

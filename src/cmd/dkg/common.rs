@@ -206,7 +206,6 @@ pub fn participant_names_from_registry(
         .collect()
 }
 
-#[allow(dead_code)]
 pub fn parse_envelope_ur(input: &str) -> Result<Envelope> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

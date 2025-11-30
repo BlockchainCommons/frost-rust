@@ -1,7 +1,7 @@
-pub mod attach;
-pub mod commit;
+pub mod finalize;
 pub mod receive;
-pub mod share;
+pub mod round1;
+pub mod round2;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -16,23 +16,23 @@ pub struct CommandArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Inspect a signCommit request (participant)
+    /// Inspect a signing invite (participant)
     Receive(receive::CommandArgs),
-    /// Respond to a signCommit request (participant)
-    Commit(commit::CommandArgs),
-    /// Respond to a signShare request with a signature share (participant)
-    Share(share::CommandArgs),
-    /// Attach a finalized signature to the target envelope (participant)
-    Attach(attach::CommandArgs),
+    /// Respond to a signing invite with commitments (Round 1)
+    Round1(round1::CommandArgs),
+    /// Respond with signature share (Round 2)
+    Round2(round2::CommandArgs),
+    /// Attach finalized signature to target envelope (participant)
+    Finalize(finalize::CommandArgs),
 }
 
 impl CommandArgs {
     pub fn exec(self) -> Result<()> {
         match self.command {
             Commands::Receive(args) => args.exec(),
-            Commands::Commit(args) => args.exec(),
-            Commands::Share(args) => args.exec(),
-            Commands::Attach(args) => args.exec(),
+            Commands::Round1(args) => args.exec(),
+            Commands::Round2(args) => args.exec(),
+            Commands::Finalize(args) => args.exec(),
         }
     }
 }

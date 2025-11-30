@@ -153,6 +153,7 @@ struct Round1Collection {
     display_path: PathBuf,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_round1(
     runtime: &Runtime,
     client: &StorageClient,
@@ -278,6 +279,7 @@ fn collect_round1(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn send_round2_requests(
     runtime: &Runtime,
     client: &StorageClient,

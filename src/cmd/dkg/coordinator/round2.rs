@@ -159,6 +159,7 @@ struct Round2Collection {
     display_path: PathBuf,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_round2(
     runtime: &Runtime,
     client: &StorageClient,
@@ -388,6 +389,7 @@ fn fetch_round2_response(
     Ok(CollectedRound2Entry { packages, next_response_arid })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn send_finalize_requests(
     runtime: &Runtime,
     client: &StorageClient,

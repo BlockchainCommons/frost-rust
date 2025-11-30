@@ -104,7 +104,7 @@ sequenceDiagram
     actor C as Carol
     actor D as Dan
 
-    note over A: sign coordinator start
+    note over A: sign coordinator invite
     A->>H: signCommit(B, C, D)
     A->>S: invite ARID
     S->>B: invite ARID
@@ -120,41 +120,41 @@ sequenceDiagram
     note over D: sign participant receive
     H->>D: signCommit(B, C, D)
 
-    note over B: sign participant commit
+    note over B: sign participant round1
     B->>H: signCommitResponse(B)
 
-    note over C: sign participant commit
+    note over C: sign participant round1
     C->>H: signCommitResponse(C)
 
-    note over D: sign participant commit
+    note over D: sign participant round1
     D->>H: signCommitResponse(D)
 
-    note over A: sign coordinator collect
+    note over A: sign coordinator round1
     H->>A: signCommitResponse(B)<br/>signCommitResponse(C)<br/>signCommitResponse(D)
     A->>H: signShare(B)<br/>signShare(C)<br/>signShare(D)
 
-    note over B: sign participant share
+    note over B: sign participant round2
     H->>B: signShare(B)
     B->>H: signShareResponse(B)
 
-    note over C: sign participant share
+    note over C: sign participant round2
     H->>C: signShare(C)
     C->>H: signShareResponse(C)
 
-    note over D: sign participant share
+    note over D: sign participant round2
     H->>D: signShare(D)
     D->>H: signShareResponse(D)
 
-    note over A: sign coordinator finalize
+    note over A: sign coordinator round2
     H->>A: signShareResponse(B)<br/>signShareResponse(C)<br/>signShareResponse(D)
     A->>H: signFinalize(B)<br/>signFinalize(C)<br/>signFinalize(D)
 
-    note over B: sign pariticipant attach
+    note over B: sign participant finalize
     H->>B: signFinalize(B)
 
-    note over C: sign pariticipant attach
+    note over C: sign participant finalize
     H->>C: signFinalize(C)
 
-    note over D: sign pariticipant attach
+    note over D: sign participant finalize
     H->>D: signFinalize(D)
 ```
