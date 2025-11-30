@@ -11,11 +11,12 @@ use frost_ed25519 as frost;
 use gstp::SealedResponse;
 use tokio::runtime::Runtime;
 
-use crate::cmd::dkg::common::OptionalStorageSelector;
 use crate::{
     cmd::{
-        dkg::common::parse_arid_ur, is_verbose,
-        registry::participants_file_path, storage::StorageClient,
+        dkg::common::{OptionalStorageSelector, parse_arid_ur},
+        is_verbose,
+        registry::participants_file_path,
+        storage::StorageClient,
     },
     registry::{PendingRequests, Registry},
 };
@@ -80,7 +81,7 @@ impl CommandArgs {
         if pending_requests.is_empty() {
             bail!(
                 "No pending requests for this group. \
-                 Did you run 'frost dkg coordinator round2 send'?"
+                 Did you run 'frost dkg coordinator round1'?"
             );
         }
 

@@ -602,42 +602,20 @@ jq . {qp(REGISTRIES["alice"])}
 
         run_step(
             shell,
-            "Alice collects Round 1 responses",
+            "Alice collects Round 1 responses and sends Round 2 requests",
             f"""
 # Get the group ID from Alice's registry
 ALICE_GROUP_ID=$(jq -r '.groups | keys[0]' {qp(REGISTRIES["alice"])})
 echo "Group ID: ${{ALICE_GROUP_ID}}"
 
-# Collect Round 1 responses from all participants
-frost dkg coordinator round1 collect --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
+# Collect Round 1 responses and dispatch Round 2 (with a preview of one request)
+ROUND1_PREVIEW=$(frost dkg coordinator round1 --preview --verbose --storage $STORAGE --timeout $TIMEOUT --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}" | tee /dev/stderr | tail -n1)
+echo "${{ROUND1_PREVIEW}}" | envelope format
 """,
             commentary=(
-                "As coordinator, Alice fetches each participant's sealed response from Hubert, "
-                "validates the GSTP response, extracts the Round 1 packages, and saves them locally."
-            ),
-        )
-
-        run_step(
-            shell,
-            "Inspecting Alice's registry after Round 1 collect",
-            f"""
-jq '.groups[].pending_requests' {qp(REGISTRIES["alice"])}
-""",
-            commentary=(
-                "Alice's registry now has pending_requests with send_to_arid (where to post Round 2) "
-                "for each participant. These came from the participants' invite responses."
-            ),
-        )
-
-        run_step(
-            shell,
-            "Checking Bob's listening ARID",
-            f"""
-jq '.groups[].listening_at_arid' {qp(REGISTRIES["bob"])}
-""",
-            commentary=(
-                "Bob's registry shows where he's listening for the Round 2 request. "
-                "This should match what Alice has as send_to_arid for Bob."
+                "Alice fetches each participant's sealed response from Hubert, "
+                "saves the Round 1 packages, and immediately posts individualized Round 2 requests. "
+                "One Round 2 request is previewed while posting."
             ),
         )
 
@@ -657,40 +635,24 @@ jq . {qp(PARTICIPANT_DIRS["alice"])}/group-state/*/collected_round1.json
 
         run_step(
             shell,
-            "Alice composes a preview Round 2 request",
-            f"""
-ROUND2_PREVIEW=$(frost dkg coordinator round2 send --preview --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}")
-echo "${{ROUND2_PREVIEW}}" | envelope format
-""",
-            commentary=(
-                "Preview one of the Round 2 requests (for the first participant). "
-                "Each participant gets a similar message with the same Round 1 packages, "
-                "but a unique responseArid where they should post their Round 2 response."
-            ),
-        )
-
-        run_step(
-            shell,
-            "Alice sends individual Round 2 requests to each participant",
-            f"""
-frost dkg coordinator round2 send --verbose --storage $STORAGE --registry {qp(REGISTRIES["alice"])} "${{ALICE_GROUP_ID}}"
-""",
-            commentary=(
-                "Alice posts a separate sealed Round 2 request for each participant to Hubert. "
-                "Each message is encrypted specifically to that participant and contains "
-                "their unique response ARID."
-            ),
-        )
-
-        run_step(
-            shell,
-            "Inspecting Alice's registry after Round 2 send",
+            "Inspecting Alice's registry after Round 2 dispatch",
             f"""
 jq '.groups' {qp(REGISTRIES["alice"])}
 """,
             commentary=(
-                "Alice's registry now has pending_requests for Round 2, mapping each participant "
-                "to their response ARID (where they will post their Round 2 response)."
+                "Alice's registry now has pending_requests with the coordinator's collection ARIDs "
+                "for Round 2 responses."
+            ),
+        )
+
+        run_step(
+            shell,
+            "Checking Bob's listening ARID for Round 2",
+            f"""
+jq '.groups[].listening_at_arid' {qp(REGISTRIES["bob"])}
+""",
+            commentary=(
+                "Bob's registry still records the ARID where Alice posted the Round 2 request."
             ),
         )
 

@@ -18,9 +18,9 @@ pub struct CommandArgs {
 enum Commands {
     /// Coordinator DKG invite operations
     Invite(invite::CommandArgs),
-    /// DKG Round 1 operations
+    /// DKG Round 1 collection and Round 2 dispatch
     Round1(round1::CommandArgs),
-    /// DKG Round 2 operations
+    /// DKG Round 2 collection operations
     Round2(round2::CommandArgs),
     /// DKG finalize operations
     Finalize(finalize::CommandArgs),

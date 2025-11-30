@@ -57,10 +57,8 @@ sequenceDiagram
     note over D: dkg participant invite respond
     D->>H: dkgInviteResponse(D)
 
-    note over A: dkg coordinator round1 collect
+    note over A: dkg coordinator round1
     H->>A: dkgInviteResponse(B)<br/>dkgInviteResponse(C)<br/>dkgInviteResponse(D)
-
-    note over A: dkg coordinator round2 send
     A->>H: dkgRound2(B)<br/>dkgRound2(C)<br/>dkgRound2(D)
 
     note over B: dkg participant round2 respond

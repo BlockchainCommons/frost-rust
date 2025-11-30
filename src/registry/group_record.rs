@@ -61,10 +61,10 @@ impl ContributionPaths {
 /// The flow is:
 /// 1. After invite send: collect_from_arid = where participant will post invite
 ///    response
-/// 2. After round1 collect: send_to_arid = where participant wants Round 2
-///    request
-/// 3. After round2 send: collect_from_arid = where participant will post Round
-///    2 response
+/// 2. After round1 collection: send_to_arid = where participant wants the Round
+///    2 request
+/// 3. After round1 dispatch of Round 2: collect_from_arid = where participant
+///    will post the Round 2 response
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct PendingRequests {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -108,7 +108,8 @@ impl PendingRequests {
     }
 
     /// Add a pending request where we know where to send AND where to collect.
-    /// Used after round2 send (we send to their ARID, collect from our ARID).
+    /// Used after round1 dispatch of Round 2 (we send to their ARID, collect
+    /// from our ARID).
     pub fn add_send_and_collect(
         &mut self,
         participant: XID,
@@ -123,7 +124,7 @@ impl PendingRequests {
     }
 
     /// Add a pending request where we only know where to send.
-    /// Used after round1 collect (we extracted where to send Round 2).
+    /// Used after round1 collection (we extracted where to send Round 2).
     pub fn add_send_only(
         &mut self,
         participant: XID,

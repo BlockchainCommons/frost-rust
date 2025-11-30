@@ -15,10 +15,9 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - `respond`: Participants accept or reject, posting response to Hubert
 
 3. **DKG Round 1** (`frost dkg coordinator round1`)
-   - `collect`: Coordinator fetches all participant responses from Hubert, validates GSTP responses, extracts Round 1 packages, saves to `collected_round1.json`
+   - Coordinator fetches all participant responses from Hubert, validates GSTP responses, extracts Round 1 packages, saves to `collected_round1.json`, and posts individualized Round 2 requests (with optional preview)
 
-4. **DKG Round 2** (`frost dkg coordinator round2` / `frost dkg participant round2`)
-   - `send`: Coordinator sends individual sealed messages to each participant containing all Round 1 packages and their unique response ARID (posts to ARIDs participants specified in their invite responses)
+4. **DKG Round 2** (`frost dkg coordinator round2 collect` / `frost dkg participant round2`)
    - `respond`: Participants respond with round2 packages, persist round2 secret, include next `response_arid`, and update `listening_at_arid`
    - `collect`: Coordinator fetches/validates Round 2 responses, saves `collected_round2.json`, and updates pending_requests for finalize phase
 
@@ -44,8 +43,7 @@ The `frost` CLI is a working tool for managing FROST (Flexible Round-Optimized S
    - Provisions 4 participants (Alice, Bob, Carol, Dan) in separate directories
    - Builds registries
    - Creates and responds to DKG invites via Hubert
-   - Coordinator collects Round 1 packages
-   - Coordinator sends Round 2 request
+   - Coordinator collects Round 1 packages and dispatches Round 2 requests
    - Coordinator collects Round 2 responses
    - Coordinator sends finalize requests
    - Participants post finalize responses
