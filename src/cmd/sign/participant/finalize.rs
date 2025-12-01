@@ -9,7 +9,7 @@ use bc_components::{ARID, Digest, JSON, Verifier, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use clap::Parser;
 use frost_ed25519 as frost;
-use gstp::{SealedRequest, SealedRequestBehavior};
+use gstp::{SealedEvent, SealedEventBehavior};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
         },
         is_verbose,
         registry::participants_file_path,
-        sign::common::signing_state_dir,
+        sign::common::{SignFinalizeContent, signing_state_dir},
         storage::StorageClient,
     },
     registry::{GroupRecord, Registry},
@@ -91,19 +91,19 @@ impl CommandArgs {
             load_share_state(&registry_path, &group_id, &session_id)?;
         validate_share_state(&share_state, &receive_state, &group_record)?;
 
-        // Fetch finalize package
-        let sealed_request = fetch_finalize_request(
+        // Fetch finalize event
+        let sealed_event = fetch_finalize_event(
             &selection,
             &share_state.finalize_arid,
             self.timeout,
             &owner,
         )?;
 
-        // Validate request
-        validate_finalize_request(&sealed_request, &session_id, &group_record)?;
+        // Validate event
+        validate_finalize_event(&sealed_event, &session_id, &group_record)?;
 
         // Extract and validate signature shares
-        let signature_shares_by_xid = parse_signature_shares(&sealed_request)?;
+        let signature_shares_by_xid = parse_signature_shares(&sealed_event)?;
         validate_signature_shares(
             &signature_shares_by_xid,
             &receive_state,
@@ -217,38 +217,30 @@ fn validate_share_state(
     Ok(())
 }
 
-fn validate_finalize_request(
-    sealed_request: &SealedRequest,
+fn validate_finalize_event(
+    sealed_event: &SealedEvent<SignFinalizeContent>,
     session_id: &ARID,
     group_record: &GroupRecord,
 ) -> Result<()> {
-    if sealed_request.function() != &Function::from("signFinalize") {
-        bail!("Unexpected request function: {}", sealed_request.function());
-    }
+    // Get the content envelope and validate the session
+    let content_envelope = sealed_event.content().envelope();
 
-    if sealed_request.id() != *session_id {
+    // Validate the session predicate
+    let event_session: ARID =
+        content_envelope.extract_object_for_predicate("session")?;
+    if event_session != *session_id {
         bail!(
-            "Session ID mismatch (request {}, expected {})",
-            sealed_request.id().ur_string(),
-            session_id.ur_string()
-        );
-    }
-
-    let request_session: ARID =
-        sealed_request.extract_object_for_parameter("session")?;
-    if request_session != *session_id {
-        bail!(
-            "Request session {} does not match expected {}",
-            request_session.ur_string(),
+            "Event session {} does not match expected {}",
+            event_session.ur_string(),
             session_id.ur_string()
         );
     }
 
     let expected_coordinator = group_record.coordinator().xid();
-    if sealed_request.sender().xid() != *expected_coordinator {
+    if sealed_event.sender().xid() != *expected_coordinator {
         bail!(
-            "Unexpected request sender: {} (expected coordinator {})",
-            sealed_request.sender().xid().ur_string(),
+            "Unexpected event sender: {} (expected coordinator {})",
+            sealed_event.sender().xid().ur_string(),
             expected_coordinator.ur_string()
         );
     }
@@ -295,12 +287,12 @@ fn validate_signature_shares(
 // Fetch helpers
 // -----------------------------------------------------------------------------
 
-fn fetch_finalize_request(
+fn fetch_finalize_event(
     selection: &crate::cmd::storage::StorageSelection,
     finalize_arid: &ARID,
     timeout: Option<u64>,
     owner: &crate::registry::OwnerRecord,
-) -> Result<SealedRequest> {
+) -> Result<SealedEvent<SignFinalizeContent>> {
     if is_verbose() {
         eprintln!("Fetching finalize package from Hubert...");
     }
@@ -322,14 +314,13 @@ fn fetch_finalize_request(
         .inception_private_keys()
         .context("Owner XID document has no inception private keys")?;
 
-    let now = Date::now();
-    SealedRequest::try_from_envelope(
+    SealedEvent::<SignFinalizeContent>::try_from_envelope(
         &finalize_envelope,
-        None,
-        Some(now),
+        None, // No expected ID for events
+        None, // No date validation needed
         signer_keys,
     )
-    .context("Failed to decode finalize request")
+    .context("Failed to decode finalize event")
 }
 
 // -----------------------------------------------------------------------------
@@ -416,10 +407,12 @@ fn update_registry_verifying_key(
 }
 
 fn parse_signature_shares(
-    request: &SealedRequest,
+    event: &SealedEvent<SignFinalizeContent>,
 ) -> Result<BTreeMap<XID, frost::round2::SignatureShare>> {
+    let content_envelope = event.content().envelope();
+
     let mut shares = BTreeMap::new();
-    for entry in request.objects_for_parameter("signature_share") {
+    for entry in content_envelope.objects_for_predicate("signature_share") {
         let xid: XID = entry.extract_subject()?;
         let share_json: JSON = entry.extract_object_for_predicate("share")?;
         let share: frost::round2::SignatureShare =

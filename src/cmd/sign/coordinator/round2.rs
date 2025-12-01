@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
@@ -11,7 +10,7 @@ use bc_envelope::prelude::*;
 use bc_xid::XIDDocument;
 use clap::Parser;
 use frost_ed25519 as frost;
-use gstp::{SealedResponse, SealedResponseBehavior};
+use gstp::{SealedEvent, SealedResponse, SealedResponseBehavior};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -19,7 +18,7 @@ use crate::{
         dkg::common::{parse_arid_ur, signing_key_from_verifying},
         is_verbose,
         registry::participants_file_path,
-        sign::common::signing_state_dir,
+        sign::common::{SignFinalizeContent, signing_state_dir},
         storage::StorageClient,
     },
     registry::Registry,
@@ -229,13 +228,11 @@ impl CommandArgs {
             eprintln!("Signature verified against target and group key.");
         }
 
-        // Dispatch finalize packages to participants
+        // Dispatch finalize events to participants (no response expected)
         let signer_keys = owner
             .xid_document()
             .inception_private_keys()
             .context("Coordinator XID document has no signing keys")?;
-        let valid_until =
-            Date::with_duration_from_now(Duration::from_secs(60 * 60));
 
         if is_verbose() {
             eprintln!(
@@ -260,15 +257,16 @@ impl CommandArgs {
                     })?
             };
 
-            let request = build_finalize_request(
+            let event = build_finalize_event(
                 owner.xid_document(),
                 &session_id,
                 &signature_shares_by_xid,
             )?;
 
             if self.preview_finalize && !preview_printed {
-                let preview = request.to_envelope(
-                    Some(valid_until),
+                // Preview as unsigned, unencrypted envelope
+                let preview = event.to_envelope(
+                    None, // No valid_until needed for events without state
                     Some(signer_keys),
                     None,
                 )?;
@@ -280,8 +278,8 @@ impl CommandArgs {
                 preview_printed = true;
             }
 
-            let sealed = request.to_envelope_for_recipients(
-                Some(valid_until),
+            let sealed = event.to_envelope_for_recipients(
+                None, // No valid_until needed for events without state
                 Some(signer_keys),
                 &[&recipient_doc],
             )?;
@@ -376,24 +374,27 @@ fn fetch_share_response(
     Ok((signature_share, finalize_arid))
 }
 
-fn build_finalize_request(
+fn build_finalize_event(
     sender: &XIDDocument,
     session_id: &ARID,
     signature_shares: &BTreeMap<XID, frost::round2::SignatureShare>,
-) -> Result<gstp::SealedRequest> {
-    let mut request =
-        gstp::SealedRequest::new("signFinalize", *session_id, sender)
-            .with_parameter("session", *session_id);
+) -> Result<gstp::SealedEvent<SignFinalizeContent>> {
+    // Build the content as an envelope with unit subject and type assertion
+    let mut content =
+        SignFinalizeContent::new().add_assertion("session", *session_id);
 
     for (xid, share) in signature_shares {
         let entry = Envelope::new(*xid).add_assertion(
             "share",
             CBOR::from(JSON::from_data(serde_json::to_vec(share)?)),
         );
-        request = request.with_parameter("signature_share", entry);
+        content = content.add_assertion("signature_share", entry);
     }
 
-    Ok(request)
+    let event =
+        SealedEvent::<SignFinalizeContent>::new(content, *session_id, sender);
+
+    Ok(event)
 }
 
 fn load_start_state(

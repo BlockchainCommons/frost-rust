@@ -1,5 +1,23 @@
 # Priority Tasks for `frost` Crate
 
+## Recent Changes
+
+### signFinalize Refactored from SealedRequest to SealedEvent ✅
+
+The `signFinalize` message sent by the coordinator to participants at the end of a signing ceremony has been refactored from a GSTP `SealedRequest` to a GSTP `SealedEvent`. This is semantically correct because:
+
+- **No response is expected**: Participants receive the aggregated signature shares and finalize locally; they do not send any response back to the coordinator.
+- **No state continuation needed**: Since there's no response expected, there's no need for encrypted state continuation in the message.
+
+**Files changed:**
+- `src/cmd/sign/common.rs`: Added `SignFinalizeContent` wrapper type that implements `EnvelopeEncodable` and `TryFrom<Envelope>` for use with `SealedEvent<T>`
+- `src/cmd/sign/coordinator/round2.rs`: Changed `build_finalize_request()` to `build_finalize_event()`, using `SealedEvent<SignFinalizeContent>` instead of `SealedRequest`
+- `src/cmd/sign/participant/finalize.rs`: Changed `fetch_finalize_request()` to `fetch_finalize_event()` and `validate_finalize_request()` to `validate_finalize_event()`
+
+The event content is an envelope with a unit subject and type assertion `'isA': "signFinalize"`, with `"session"` and `"signature_share"` predicates. This format is consistent with how GSTP responses structure their result envelopes.
+
+---
+
 ## Code Quality Improvements
 
 ### 1. High Priority: Extract Duplicate Utility Functions ✅ COMPLETED
@@ -65,9 +83,10 @@ Several `exec()` methods exceed 100 lines and mix multiple concerns:
 
 **`sign/participant/finalize.rs` refactoring (completed):**
 - `exec()` reduced from ~220 lines to ~75 lines
-- Extracted validation helpers: `validate_session_state()`, `validate_share_state()`, `validate_finalize_request()`, `validate_signature_shares()`
-- Extracted fetch helper: `fetch_finalize_request()`
+- Extracted validation helpers: `validate_session_state()`, `validate_share_state()`, `validate_finalize_event()`, `validate_signature_shares()`
+- Extracted fetch helper: `fetch_finalize_event()`
 - Extracted FROST aggregation: `aggregate_and_verify_signature()`, `update_registry_verifying_key()`
+- **Refactored signFinalize handling from `SealedRequest` to `SealedEvent`**: Since no response is expected from participants, the signFinalize message is now semantically correct as a GSTP event rather than a request.
 
 **`sign/coordinator/invite.rs` refactoring (completed):**
 - `exec()` reduced from ~170 lines to ~65 lines
