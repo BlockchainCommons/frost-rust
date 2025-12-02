@@ -5,5 +5,5 @@ STORAGE=hybrid
 TIMEOUT=1000
 
 section() {
-    echo "\n=== \033[94m$*\033[0m\n"
+    echo "\n\033[94m=== $*\033[0m\n"
 }

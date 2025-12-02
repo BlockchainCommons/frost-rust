@@ -4,52 +4,52 @@ source config
 
 rm -rf demo && mkdir -p demo
 
-section "Generating Alice identity..."
+section "Generate Alice identity..."
 ALICE_PRVKEYS=$(envelope generate prvkeys)
 ALICE_PUBKEYS=$(envelope generate pubkeys "$ALICE_PRVKEYS")
 ALICE_OWNER_DOC=$(envelope xid new --nickname Alice --sign inception "$ALICE_PRVKEYS")
 ALICE_SIGNED_DOC=$(envelope xid new --nickname Alice --private omit --sign inception "$ALICE_PRVKEYS")
 
-section "Generating Bob identity..."
+section "Generate Bob identity..."
 BOB_PRVKEYS=$(envelope generate prvkeys)
 BOB_PUBKEYS=$(envelope generate pubkeys "$BOB_PRVKEYS")
 BOB_OWNER_DOC=$(envelope xid new --nickname Bob --sign inception "$BOB_PRVKEYS")
 BOB_SIGNED_DOC=$(envelope xid new --nickname Bob --private omit --sign inception "$BOB_PRVKEYS")
 
-section "Generating Carol identity..."
+section "Generate Carol identity..."
 CAROL_PRVKEYS=$(envelope generate prvkeys)
 CAROL_PUBKEYS=$(envelope generate pubkeys "$CAROL_PRVKEYS")
 CAROL_OWNER_DOC=$(envelope xid new --nickname Carol --sign inception "$CAROL_PRVKEYS")
 CAROL_SIGNED_DOC=$(envelope xid new --nickname Carol --private omit --sign inception "$CAROL_PRVKEYS")
 
-section "Generating Dan identity..."
+section "Generate Dan identity..."
 DAN_PRVKEYS=$(envelope generate prvkeys)
 DAN_PUBKEYS=$(envelope generate pubkeys "$DAN_PRVKEYS")
 DAN_OWNER_DOC=$(envelope xid new --nickname Dan --sign inception "$DAN_PRVKEYS")
 DAN_SIGNED_DOC=$(envelope xid new --nickname Dan --private omit --sign inception "$DAN_PRVKEYS")
 
-section "Setting up Alice's registry..."
+section "Set up Alice's registry..."
 ALICE_REGISTRY=demo/alice/registry.json
 frost registry owner set --registry "$ALICE_REGISTRY" "$ALICE_OWNER_DOC" Alice
 frost registry participant add --registry "$ALICE_REGISTRY" "$BOB_SIGNED_DOC" Bob
 frost registry participant add --registry "$ALICE_REGISTRY" "$CAROL_SIGNED_DOC" Carol
 frost registry participant add --registry "$ALICE_REGISTRY" "$DAN_SIGNED_DOC" Dan
 
-section "Setting up Bob's registry..."
+section "Set up Bob's registry..."
 BOB_REGISTRY=demo/bob/registry.json
 frost registry owner set --registry "$BOB_REGISTRY" "$BOB_OWNER_DOC" Bob
 frost registry participant add --registry "$BOB_REGISTRY" "$ALICE_SIGNED_DOC" Alice
 frost registry participant add --registry "$BOB_REGISTRY" "$CAROL_SIGNED_DOC" Carol
 frost registry participant add --registry "$BOB_REGISTRY" "$DAN_SIGNED_DOC" Dan
 
-section "Setting up Carol's registry..."
+section "Set up Carol's registry..."
 CAROL_REGISTRY=demo/carol/registry.json
 frost registry owner set --registry "$CAROL_REGISTRY" "$CAROL_OWNER_DOC" Carol
 frost registry participant add --registry "$CAROL_REGISTRY" "$ALICE_SIGNED_DOC" Alice
 frost registry participant add --registry "$CAROL_REGISTRY" "$BOB_SIGNED_DOC" Bob
 frost registry participant add --registry "$CAROL_REGISTRY" "$DAN_SIGNED_DOC" Dan
 
-section "Setting up Dan's registry..."
+section "Set up Dan's registry..."
 DAN_REGISTRY=demo/dan/registry.json
 frost registry owner set --registry "$DAN_REGISTRY" "$DAN_OWNER_DOC" Dan
 frost registry participant add --registry "$DAN_REGISTRY" "$ALICE_SIGNED_DOC" Alice

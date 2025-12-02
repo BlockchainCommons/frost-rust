@@ -173,7 +173,7 @@ impl ProgressDisplay {
             let template = match direction {
                 Direction::Get => {
                     format!(
-                        "{}  {{spinner:.yellow}} {}... {}s",
+                        "{}  {{spinner:.yellow}} {}... -{}s",
                         direction.emoji(),
                         name,
                         timeout_seconds
@@ -181,7 +181,7 @@ impl ProgressDisplay {
                 }
                 Direction::Put => {
                     format!(
-                        "{}  {{spinner:.yellow}} {}... 0s",
+                        "{}  {{spinner:.yellow}} {}... +0s",
                         direction.emoji(),
                         name
                     )
@@ -236,7 +236,7 @@ impl ProgressDisplay {
                             Direction::Get => {
                                 let remaining = timeout.saturating_sub(elapsed);
                                 format!(
-                                    "{}  {{spinner:.yellow}} {}... {}s",
+                                    "{}  {{spinner:.yellow}} {}... -{}s",
                                     direction.emoji(),
                                     name,
                                     remaining
@@ -244,7 +244,7 @@ impl ProgressDisplay {
                             }
                             Direction::Put => {
                                 format!(
-                                    "{}  {{spinner:.yellow}} {}... {}s",
+                                    "{}  {{spinner:.yellow}} {}... +{}s",
                                     direction.emoji(),
                                     name,
                                     elapsed
@@ -319,6 +319,8 @@ impl ProgressDisplay {
         for (bar, _) in self.bars.values() {
             bar.finish();
         }
+        // Ensure we're on a new line after all progress bars finish
+        eprintln!();
     }
 
     /// Clear all progress bars without marking complete.

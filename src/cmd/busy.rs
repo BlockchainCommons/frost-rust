@@ -77,7 +77,7 @@ impl BusyIndicator {
                 Direction::Get => {
                     if let Some(timeout) = timeout_seconds {
                         format!(
-                            "{}  {{spinner:.yellow}} {}... {}s",
+                            "{}  {{spinner:.yellow}} {}... -{}s",
                             direction.emoji(),
                             name,
                             timeout
@@ -92,7 +92,7 @@ impl BusyIndicator {
                 }
                 Direction::Put => {
                     format!(
-                        "{}  {{spinner:.yellow}} {}... 0s",
+                        "{}  {{spinner:.yellow}} {}... +0s",
                         direction.emoji(),
                         name
                     )
@@ -151,7 +151,7 @@ impl BusyIndicator {
                         if let Some(t) = timeout {
                             let remaining = t.saturating_sub(elapsed);
                             format!(
-                                "{}  {{spinner:.yellow}} {}... {}s",
+                                "{}  {{spinner:.yellow}} {}... -{}s",
                                 direction.emoji(),
                                 name,
                                 remaining
@@ -166,7 +166,7 @@ impl BusyIndicator {
                     }
                     Direction::Put => {
                         format!(
-                            "{}  {{spinner:.yellow}} {}... {}s",
+                            "{}  {{spinner:.yellow}} {}... +{}s",
                             direction.emoji(),
                             name,
                             elapsed

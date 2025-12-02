@@ -582,11 +582,8 @@ fn finalize_collection_results(
         if let Some(key) = group_verifying_key {
             eprintln!("{}", key.ur_string());
         }
-    } else {
-        println!("{}", collected_path.display());
-        if let Some(key) = group_verifying_key {
-            println!("{}", key.ur_string());
-        }
+    } else if let Some(key) = group_verifying_key {
+        println!("{}", key.ur_string());
     }
 
     Ok(())
