@@ -954,7 +954,5 @@ fn print_summary_parallel(
             display_path.display(),
             collection.successes.len()
         );
-    } else {
-        println!("{}", display_path.display());
     }
 }

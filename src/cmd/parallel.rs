@@ -130,7 +130,6 @@ pub struct ProgressDisplay {
     #[allow(dead_code)]
     multi: MultiProgress,
     bars: HashMap<XID, (ProgressBar, String)>,
-    countdown_bar: ProgressBar,
     start_time: Instant,
     timeout_seconds: u64,
     direction: Direction,
@@ -197,26 +196,9 @@ impl ProgressDisplay {
             bars.insert(*xid, (bar, name.clone()));
         }
 
-        // Add countdown bar at the bottom
-        let countdown_bar = multi.add(ProgressBar::new_spinner());
-        countdown_bar.set_style(
-            ProgressStyle::default_spinner()
-                .template("{msg}")
-                .expect("valid template"),
-        );
-        let countdown_msg = match direction {
-            Direction::Get => {
-                format!("Waiting... {}s remaining", timeout_seconds)
-            }
-            Direction::Put => "Sending...".to_string(),
-        };
-        countdown_bar.set_message(countdown_msg);
-        countdown_bar.enable_steady_tick(Duration::from_secs(1));
-
         Self {
             multi,
             bars,
-            countdown_bar,
             start_time,
             timeout_seconds,
             direction,
@@ -232,7 +214,6 @@ impl ProgressDisplay {
             .iter()
             .map(|(xid, (bar, name))| (*xid, bar.clone(), name.clone()))
             .collect();
-        let countdown_bar = self.countdown_bar.clone();
         let timeout = self.timeout_seconds;
         let direction = self.direction;
         let stop_flag = Arc::clone(&self.stop_flag);
@@ -247,18 +228,6 @@ impl ProgressDisplay {
                 }
                 let elapsed = start.elapsed().as_secs();
                 elapsed_tracker.store(elapsed, Ordering::Relaxed);
-
-                // Update countdown/countup bar
-                let msg = match direction {
-                    Direction::Get => {
-                        let remaining = timeout.saturating_sub(elapsed);
-                        format!("Waiting... {}s remaining", remaining)
-                    }
-                    Direction::Put => {
-                        format!("Sending... {}s", elapsed)
-                    }
-                };
-                countdown_bar.set_message(msg);
 
                 // Update individual bars that are still pending
                 for (_xid, bar, name) in &bars {
@@ -344,28 +313,12 @@ impl ProgressDisplay {
         }
     }
 
-    /// Update the countdown display.
-    pub fn update_countdown(&self) {
-        let elapsed = self.start_time.elapsed().as_secs();
-        let msg = match self.direction {
-            Direction::Get => {
-                let remaining = self.timeout_seconds.saturating_sub(elapsed);
-                format!("Waiting... {}s remaining", remaining)
-            }
-            Direction::Put => {
-                format!("Sending... {}s", elapsed)
-            }
-        };
-        self.countdown_bar.set_message(msg);
-    }
-
     /// Finish all progress bars.
     pub fn finish(&self) {
         self.stop_flag.store(true, Ordering::Relaxed);
         for (bar, _) in self.bars.values() {
             bar.finish();
         }
-        self.countdown_bar.finish_and_clear();
     }
 
     /// Clear all progress bars without marking complete.
@@ -375,7 +328,6 @@ impl ProgressDisplay {
         for (bar, _) in self.bars.values() {
             bar.finish_and_clear();
         }
-        self.countdown_bar.finish_and_clear();
     }
 }
 

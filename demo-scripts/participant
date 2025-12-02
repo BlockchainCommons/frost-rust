@@ -6,7 +6,7 @@ INVITE_ARID=$2
 
 REGISTRY=demo/$NAME/registry.json
 
-section "Retriving invite for $NAME's DKG group from Hubert '$STORAGE'..."
+section "🔑 Retrive invite for $NAME's DKG group from Hubert '$STORAGE'..."
 
 INVITE=$(\
     frost dkg participant receive \
@@ -17,14 +17,14 @@ INVITE=$(\
     "${INVITE_ARID}"
 )
 
-section "Posting round 1 response for $NAME's DKG group to Hubert '$STORAGE'..."
+section "🔑 Post round 1 response for $NAME's DKG group..."
 
 frost dkg participant round1 \
     --storage $STORAGE \
     --registry "$REGISTRY" \
     "${INVITE_ARID}"
 
-section "Fetch the Round 2 request, runs FROST DKG part2 with Round 1 secret and all Round 1 packages, post Round 2 packages"
+section "🔑 Fetch Round 2 request, run FROST DKG part2 with Round 1 secret and all Round 1 packages, post Round 2 packages..."
 
 GROUP_ID=$(jq -r '.groups | keys[0]' $REGISTRY)
 
@@ -34,10 +34,12 @@ frost dkg participant round2 \
     --registry "$REGISTRY" \
     "${GROUP_ID}"
 
-section "Fetch the Round 2 request again to finalize DKG for $NAME's DKG group on Hubert '$STORAGE'..."
+section "🔑 Finalize DKG for $NAME's DKG group on Hubert '$STORAGE'..."
 
 frost dkg participant finalize \
     --storage $STORAGE \
     --timeout $TIMEOUT \
     --registry "$REGISTRY" \
     "${GROUP_ID}"
+
+section "🔑 DKG Complete!"

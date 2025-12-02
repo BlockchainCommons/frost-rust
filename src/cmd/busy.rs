@@ -202,6 +202,8 @@ impl BusyIndicator {
                         .expect("valid template"),
                 );
                 bar.finish();
+                // Ensure we're on a new line after finish
+                eprintln!();
             }
         } else {
             // Non-interactive: print complete status line
@@ -232,6 +234,8 @@ impl BusyIndicator {
                         .expect("valid template"),
                 );
                 bar.finish();
+                // Ensure we're on a new line after finish
+                eprintln!();
             }
         } else {
             // Non-interactive: print complete status line
@@ -256,6 +260,8 @@ impl BusyIndicator {
                         .expect("valid template"),
                 );
                 bar.finish();
+                // Ensure we're on a new line after finish
+                eprintln!();
             }
         } else {
             // Non-interactive: print complete status line

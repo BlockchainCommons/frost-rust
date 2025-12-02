@@ -4,7 +4,7 @@ source config
 
 REGISTRY=demo/alice/registry.json
 
-section "Posting invite for Alice's DKG group to Hubert '$STORAGE'..."
+section "🔑 Post invite for DKG group to Hubert '$STORAGE'..."
 
 INVITE_ARID=$(\
     frost dkg coordinator invite \
@@ -16,7 +16,7 @@ INVITE_ARID=$(\
 )
 echo "\n\n${INVITE_ARID}\n"
 
-section "Collect Round 1 responses and dispatch Round 2 for Alice's DKG group to Hubert '$STORAGE'..."
+section "🔑 Collect Round 1 responses and dispatch Round 2 for DKG group.."
 
 GROUP_ID=$(jq -r '.groups | keys[0]' "$REGISTRY")
 frost dkg coordinator round1 \
@@ -26,7 +26,7 @@ frost dkg coordinator round1 \
     --registry "$REGISTRY" \
     "${GROUP_ID}"
 
-section "Collect Round 2 responses and finalize Alice's DKG group on Hubert '$STORAGE'..."
+section "🔑 Collect Round 2 responses and finalize DKG group.."
 
 frost dkg coordinator round2 \
     --parallel \
@@ -34,3 +34,14 @@ frost dkg coordinator round2 \
     --timeout $TIMEOUT \
     --registry $REGISTRY \
     "${GROUP_ID}"
+
+section "🔑 Wait for participants to confirm finalization..."
+
+frost dkg coordinator finalize \
+    --parallel \
+    --storage $STORAGE \
+    --timeout $TIMEOUT \
+    --registry "$REGISTRY" \
+    "${GROUP_ID}"
+
+section "🔑 DKG Complete!"
