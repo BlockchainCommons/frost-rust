@@ -1,5 +1,110 @@
 # Coordinator Parallelization Implementation Plan
 
+## Implementation Status
+
+| Phase    | Description                               | Status     |
+| -------- | ----------------------------------------- | ---------- |
+| Phase 1  | Add Dependencies                          | ✅ Complete |
+| Phase 2  | Create Parallel Fetch Module              | ✅ Complete |
+| Phase 3  | Interactive Progress Display              | ✅ Complete |
+| Phase 4  | Non-Interactive Output                    | ✅ Complete |
+| Phase 5  | Parallel Execution Core                   | ✅ Complete |
+| Phase 6  | Refactor dkg coordinator round1           | ✅ Complete |
+| Phase 7  | Parallel Sends                            | ✅ Complete |
+| Phase 8  | Terminal Detection                        | ✅ Complete |
+| Phase 9  | Add --parallel flag to remaining commands | ✅ Complete |
+| Phase 10 | Error Handling Strategy                   | ✅ Complete |
+
+## All Commands Updated
+
+All coordinator commands now have `--parallel` flag:
+
+- `dkg coordinator round1 --parallel`
+- `dkg coordinator round2 --parallel`
+- `dkg coordinator finalize --parallel`
+- `sign coordinator round1 --parallel`
+- `sign coordinator round2 --parallel`
+
+## Lessons Learned
+
+### Critical: Hubert KvStore futures are `!Send`
+
+The Hubert `KvStore` trait uses `#[async_trait(?Send)]`, meaning its futures **cannot** be spawned across threads with `tokio::spawn`.
+
+**What doesn't work:**
+```rust
+// ERROR: future is not Send
+tokio::spawn(async move {
+    client.get(&arid, None).await  // !Send future
+});
+```
+
+**What works:**
+Using `futures::future::join_all` with regular async blocks (not spawned tasks) allows concurrent execution without requiring `Send`:
+
+```rust
+use futures::future::join_all;
+
+let futures: Vec<_> = arids
+    .iter()
+    .map(|arid| async {
+        client.get(arid, timeout).await
+    })
+    .collect();
+
+let results = join_all(futures).await;
+```
+
+This works because `join_all` runs all futures on the same thread, polling them interleaved, without spawning separate tasks.
+
+### Arc unwrap requires avoiding `expect`
+
+When using `Arc::try_unwrap`, the error type contains `Arc<T>`, which requires `T: Debug` for `.expect()`. Use `.map_err()` instead:
+
+```rust
+// ERROR if T doesn't impl Debug
+Arc::try_unwrap(results).expect("all tasks completed")
+
+// Works for any T
+Arc::try_unwrap(results)
+    .map_err(|_| anyhow::anyhow!("Failed to unwrap"))?
+```
+
+### Progress display with indicatif
+
+The `indicatif` crate provides multi-line progress display. Key patterns:
+
+```rust
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+
+let multi = MultiProgress::new();
+let bar = multi.add(ProgressBar::new_spinner());
+bar.set_message("Bob");
+bar.enable_steady_tick(Duration::from_millis(100));
+
+// Update status
+bar.set_style(ProgressStyle::default_spinner()
+    .template("✅ {msg}").unwrap());
+bar.finish();
+```
+
+### Parallel fetch/send architecture
+
+The implementation uses a channel-based pattern:
+1. Spawn all fetch/send operations as concurrent futures
+2. Use `futures::future::join_all` to await all
+3. Collect results with status tracking
+4. Update progress display as each completes
+
+```rust
+pub struct CollectionResult<T> {
+    pub successes: Vec<(XID, T)>,
+    pub rejections: Vec<(XID, String)>,
+    pub errors: Vec<(XID, String)>,
+    pub timeouts: Vec<XID>,
+}
+```
+
 ## Overview
 
 This document describes an implementation plan to parallelize the coordinator's send and receive operations for the following commands:

@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -19,6 +20,7 @@ use crate::{
             OptionalStorageSelector, group_state_dir, parse_arid_ur,
         },
         is_verbose,
+        parallel::{CollectionResult, ParallelFetchConfig, parallel_fetch},
         registry::participants_file_path,
         storage::StorageClient,
     },
@@ -43,6 +45,10 @@ pub struct CommandArgs {
     /// Preview one of the Round 2 requests while sending
     #[arg(long = "preview")]
     preview: bool,
+
+    /// Use parallel fetch/send with interactive progress display
+    #[arg(long)]
+    parallel: bool,
 
     /// Group ID to collect Round 1 responses for
     #[arg(value_name = "GROUP_ID")]
@@ -91,22 +97,75 @@ impl CommandArgs {
             StorageClient::from_selection(selection).await
         })?;
 
-        let mut ctx = Round1Context {
-            runtime: &runtime,
-            client: &client,
-            registry_path: &registry_path,
-            registry: &mut registry,
-            owner_doc: &owner_doc,
-            group_id: &group_id,
-        };
+        if self.parallel {
+            // Parallel path with progress display
+            let client = Arc::new(client);
+            let collection = runtime.block_on(async {
+                collect_round1_responses_parallel(
+                    Arc::clone(&client),
+                    &registry,
+                    pending_requests,
+                    &owner_doc,
+                    &group_id,
+                    self.timeout,
+                )
+                .await
+            })?;
 
-        let collection =
-            collect_round1_responses(&mut ctx, pending_requests, self.timeout)?;
+            // Extract packages for persistence
+            let packages: Vec<(XID, frost::keys::dkg::round1::Package)> =
+                collection
+                    .successes
+                    .iter()
+                    .map(|(xid, data)| (*xid, data.package.clone()))
+                    .collect();
 
-        let preview =
-            dispatch_round2_requests(&mut ctx, &collection, self.preview)?;
+            let display_path =
+                persist_round1_packages(&registry_path, &group_id, &packages)?;
 
-        print_summary(&collection, preview);
+            update_pending_for_round2_from_collection(
+                &mut registry,
+                &registry_path,
+                &group_id,
+                &collection.successes,
+            )?;
+
+            let preview = runtime.block_on(async {
+                dispatch_round2_requests_parallel(
+                    Arc::clone(&client),
+                    &mut registry,
+                    &registry_path,
+                    &owner_doc,
+                    &group_id,
+                    &collection.successes,
+                    self.preview,
+                )
+                .await
+            })?;
+
+            print_summary_parallel(&collection, &display_path, preview);
+        } else {
+            // Sequential path (original behavior)
+            let mut ctx = Round1Context {
+                runtime: &runtime,
+                client: &client,
+                registry_path: &registry_path,
+                registry: &mut registry,
+                owner_doc: &owner_doc,
+                group_id: &group_id,
+            };
+
+            let collection = collect_round1_responses(
+                &mut ctx,
+                pending_requests,
+                self.timeout,
+            )?;
+
+            let preview =
+                dispatch_round2_requests(&mut ctx, &collection, self.preview)?;
+
+            print_summary(&collection, preview);
+        }
 
         Ok(())
     }
@@ -560,4 +619,293 @@ fn build_round2_request_for_participant(
     }
 
     Ok(request)
+}
+
+// -----------------------------------------------------------------------------
+// Parallel implementations
+// -----------------------------------------------------------------------------
+
+/// Data extracted from a successful Round 1 response.
+struct Round1ResponseData {
+    package: frost::keys::dkg::round1::Package,
+    next_response_arid: ARID,
+}
+
+/// Collect Round 1 responses in parallel with progress display.
+async fn collect_round1_responses_parallel(
+    client: Arc<StorageClient>,
+    registry: &Registry,
+    pending_requests: &PendingRequests,
+    coordinator: &XIDDocument,
+    expected_group_id: &ARID,
+    timeout: Option<u64>,
+) -> Result<CollectionResult<Round1ResponseData>> {
+    let requests: Vec<(XID, ARID, String)> = pending_requests
+        .iter_collect()
+        .map(|(xid, arid)| {
+            let name = registry
+                .participant(xid)
+                .and_then(|r| r.pet_name().map(|s| s.to_owned()))
+                .unwrap_or_else(|| xid.ur_string());
+            (*xid, *arid, name)
+        })
+        .collect();
+
+    let coordinator_keys = coordinator
+        .inception_private_keys()
+        .context("Missing coordinator private keys")?
+        .clone();
+    let group_id = *expected_group_id;
+
+    let config = ParallelFetchConfig::with_timeout(timeout);
+
+    parallel_fetch(client, requests, config, move |envelope, _xid| {
+        validate_and_extract_round1_response(
+            envelope,
+            &coordinator_keys,
+            &group_id,
+        )
+    })
+    .await
+}
+
+/// Validate envelope and extract Round 1 data (for parallel fetch).
+fn validate_and_extract_round1_response(
+    envelope: &Envelope,
+    coordinator_keys: &bc_components::PrivateKeys,
+    expected_group_id: &ARID,
+) -> Result<Round1ResponseData> {
+    let now = Date::now();
+    let sealed_response = SealedResponse::try_from_encrypted_envelope(
+        envelope,
+        None,
+        Some(now),
+        coordinator_keys,
+    )?;
+
+    if let Ok(error) = sealed_response.error() {
+        let reason = error
+            .object_for_predicate("reason")
+            .ok()
+            .and_then(|e| e.extract_subject::<String>().ok())
+            .unwrap_or_else(|| "unknown reason".to_string());
+        bail!("Participant rejected invite: {}", reason);
+    }
+
+    let result = sealed_response
+        .result()
+        .context("Response has no result envelope")?;
+
+    validate_round1_response(result, expected_group_id)?;
+
+    let next_response_arid: ARID =
+        result.extract_object_for_predicate("response_arid")?;
+    let package = extract_round1_package(result)?;
+
+    Ok(Round1ResponseData { package, next_response_arid })
+}
+
+/// Update pending requests from parallel collection results.
+fn update_pending_for_round2_from_collection(
+    registry: &mut Registry,
+    registry_path: &Path,
+    group_id: &ARID,
+    successes: &[(XID, Round1ResponseData)],
+) -> Result<()> {
+    let mut new_pending = PendingRequests::new();
+    for (xid, data) in successes {
+        new_pending.add_send_only(*xid, data.next_response_arid);
+    }
+    let group_record = registry
+        .group_mut(group_id)
+        .context("Group not found in registry")?;
+    group_record.set_pending_requests(new_pending);
+    registry.save(registry_path)?;
+    Ok(())
+}
+
+/// Dispatch Round 2 requests in parallel.
+async fn dispatch_round2_requests_parallel(
+    client: Arc<StorageClient>,
+    registry: &mut Registry,
+    registry_path: &Path,
+    coordinator: &XIDDocument,
+    group_id: &ARID,
+    successes: &[(XID, Round1ResponseData)],
+    preview: bool,
+) -> Result<Option<(String, String)>> {
+    use crate::cmd::parallel::parallel_send;
+
+    let signer_private_keys = coordinator
+        .inception_private_keys()
+        .context("Coordinator XID document has no signing keys")?;
+    let valid_until =
+        Date::with_duration_from_now(Duration::from_secs(60 * 60));
+
+    // Build round1 packages list for request building
+    let round1_packages: Vec<(XID, frost::keys::dkg::round1::Package)> =
+        successes
+            .iter()
+            .map(|(xid, data)| (*xid, data.package.clone()))
+            .collect();
+
+    // Build participant info and messages
+    let mut messages: Vec<(XID, ARID, Envelope, String)> = Vec::new();
+    let mut collect_arids: Vec<(XID, ARID)> = Vec::new();
+    let mut preview_output: Option<(String, String)> = None;
+
+    for (xid, data) in successes {
+        let recipient_doc = registry
+            .participant(xid)
+            .map(|r| r.xid_document().clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Participant {} not found in registry",
+                    xid.ur_string()
+                )
+            })?;
+
+        let participant_name = registry
+            .participant(xid)
+            .and_then(|r| r.pet_name().map(|s| s.to_owned()))
+            .unwrap_or_else(|| xid.ur_string());
+
+        let collect_from_arid = ARID::new();
+        collect_arids.push((*xid, collect_from_arid));
+
+        let request = build_round2_request_for_participant(
+            coordinator,
+            group_id,
+            &round1_packages,
+            collect_from_arid,
+        )?;
+
+        if preview && preview_output.is_none() {
+            let unsealed_envelope = request.to_envelope(
+                Some(valid_until),
+                Some(signer_private_keys),
+                None,
+            )?;
+            preview_output =
+                Some((participant_name.clone(), unsealed_envelope.ur_string()));
+        }
+
+        let sealed_envelope = request.to_envelope_for_recipients(
+            Some(valid_until),
+            Some(signer_private_keys),
+            &[&recipient_doc],
+        )?;
+
+        messages.push((
+            *xid,
+            data.next_response_arid,
+            sealed_envelope,
+            participant_name,
+        ));
+    }
+
+    // Send all messages in parallel
+    let send_results = parallel_send(client, messages).await;
+
+    // Check for send failures
+    let failures: Vec<_> = send_results
+        .iter()
+        .filter_map(|(xid, result)| {
+            result.as_ref().err().map(|e| (*xid, e.to_string()))
+        })
+        .collect();
+
+    if !failures.is_empty() {
+        for (xid, error) in &failures {
+            eprintln!("Failed to send to {}: {}", xid.ur_string(), error);
+        }
+        bail!(
+            "Failed to send Round 2 requests to {} participants",
+            failures.len()
+        );
+    }
+
+    // Update pending requests for Round 2 collection
+    let mut new_pending_requests = PendingRequests::new();
+    for (xid, collect_from_arid) in &collect_arids {
+        new_pending_requests.add_collect_only(*xid, *collect_from_arid);
+    }
+    let group_record = registry
+        .group_mut(group_id)
+        .context("Group not found in registry")?;
+    group_record.set_pending_requests(new_pending_requests);
+    registry.save(registry_path)?;
+
+    Ok(preview_output)
+}
+
+/// Print summary for parallel collection.
+fn print_summary_parallel(
+    collection: &CollectionResult<Round1ResponseData>,
+    display_path: &Path,
+    preview: Option<(String, String)>,
+) {
+    // Report any failures
+    if !collection.rejections.is_empty() {
+        eprintln!();
+        eprintln!("Rejections:");
+        for (xid, reason) in &collection.rejections {
+            eprintln!("  {}: {}", xid.ur_string(), reason);
+        }
+    }
+    if !collection.errors.is_empty() {
+        eprintln!();
+        eprintln!("Errors:");
+        for (xid, error) in &collection.errors {
+            eprintln!("  {}: {}", xid.ur_string(), error);
+        }
+    }
+    if !collection.timeouts.is_empty() {
+        eprintln!();
+        eprintln!("Timeouts:");
+        for xid in &collection.timeouts {
+            eprintln!("  {}", xid.ur_string());
+        }
+    }
+
+    if !collection.all_succeeded() {
+        eprintln!();
+        bail_with_collection_summary(collection);
+    }
+
+    if let Some((participant_name, ur)) = preview {
+        if is_verbose() {
+            eprintln!("# Round 2 preview for {}", participant_name);
+            eprintln!();
+        }
+        eprintln!(
+            "Collected {} Round 1 packages to {} and sent {} Round 2 requests.",
+            collection.successes.len(),
+            display_path.display(),
+            collection.successes.len()
+        );
+        println!("{ur}");
+    } else if is_verbose() {
+        eprintln!();
+        eprintln!(
+            "Collected {} Round 1 packages to {} and sent {} Round 2 requests.",
+            collection.successes.len(),
+            display_path.display(),
+            collection.successes.len()
+        );
+    } else {
+        println!("{}", display_path.display());
+    }
+}
+
+fn bail_with_collection_summary(
+    collection: &CollectionResult<Round1ResponseData>,
+) {
+    eprintln!(
+        "Round 1 collection incomplete: {} succeeded, {} rejected, {} errors, {} timeouts",
+        collection.successes.len(),
+        collection.rejections.len(),
+        collection.errors.len(),
+        collection.timeouts.len()
+    );
 }

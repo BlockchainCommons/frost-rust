@@ -1,0 +1,34 @@
+#!/bin/zsh
+
+source config
+NAME=$1
+INVITE_ARID=$2
+
+REGISTRY=demo/$NAME/registry.json
+
+echo "Retriving invite for $NAME's DKG group from Hubert '$STORAGE'..."
+
+INVITE=$(\
+    frost dkg participant receive \
+    --info \
+    --storage $STORAGE \
+    --timeout $TIMEOUT \
+    --registry "$REGISTRY" \
+    "${INVITE_ARID}"
+)
+
+echo "Posting round 1 response for $NAME's DKG group to Hubert '$STORAGE'..."
+
+frost dkg participant round1 \
+    --storage $STORAGE \
+    --registry "$REGISTRY" \
+    "${INVITE_ARID}"
+
+echo "Fetch the Round 2 request, runs FROST DKG part2 with Round 1 secret and all Round 1 packages, post Round 2 packages"
+
+GROUP_ID=$(jq -r '.groups | keys[0]' $REGISTRY)
+frost dkg participant round2 \
+    --storage $STORAGE \
+    --timeout $TIMEOUT \
+    --registry "$REGISTRY" \
+    "${GROUP_ID}"

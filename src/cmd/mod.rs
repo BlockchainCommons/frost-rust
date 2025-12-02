@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 pub mod check;
 pub mod common;
 pub mod dkg;
+pub mod parallel;
 pub mod registry;
 pub mod sign;
 pub mod storage;

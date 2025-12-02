@@ -101,12 +101,12 @@ impl CommandArgs {
             println!("{}", invite_envelope.ur_string());
         }
         if self.info {
-            println!("Charter: {}", details.invitation.charter());
-            println!("Min signers: {}", details.invitation.min_signers());
+            eprintln!("Charter: {}", details.invitation.charter());
+            eprintln!("Min signers: {}", details.invitation.min_signers());
             if let Some(name) = coordinator_name {
-                println!("Coordinator: {}", name);
+                eprintln!("Coordinator: {}", name);
             }
-            println!("Participants: {}", participant_names.join(", "));
+            eprintln!("Participants: {}", participant_names.join(", "));
         }
 
         Ok(())

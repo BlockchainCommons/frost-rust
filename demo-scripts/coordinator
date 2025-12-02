@@ -1,0 +1,27 @@
+#!/bin/zsh
+
+source config
+
+REGISTRY=demo/alice/registry.json
+
+echo "Posting invite for Alice's DKG group to Hubert '$STORAGE'..."
+
+INVITE_ARID=$(\
+    frost dkg coordinator invite \
+    --storage $STORAGE \
+    --registry "$REGISTRY" \
+    --min-signers 2 \
+    --charter "This group will authorize new club editions." \
+    Bob Carol Dan\
+)
+echo "${INVITE_ARID}"
+
+echo "Collect Round 1 responses and dispatch Round 2 for Alice's DKG group to Hubert '$STORAGE'..."
+
+GROUP_ID=$(jq -r '.groups | keys[0]' "$REGISTRY")
+frost dkg coordinator round1 \
+    --parallel \
+    --storage $STORAGE \
+    --timeout $TIMEOUT \
+    --registry "$REGISTRY" \
+    "${GROUP_ID}"

@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -18,6 +19,7 @@ use crate::{
     cmd::{
         dkg::{OptionalStorageSelector, common::parse_arid_ur},
         is_verbose,
+        parallel::{CollectionResult, ParallelFetchConfig, parallel_fetch},
         registry::participants_file_path,
         sign::common::signing_state_dir,
         storage::StorageClient,
@@ -47,6 +49,10 @@ pub struct CommandArgs {
     /// Print a sample unsealed signRound2 request (does not affect sending)
     #[arg(long = "preview-share")]
     preview_share: bool,
+
+    /// Use parallel fetch/send with interactive progress display
+    #[arg(long)]
+    parallel: bool,
 
     /// Signing session ID to collect
     #[arg(value_name = "SESSION_ID")]
@@ -91,164 +97,194 @@ impl CommandArgs {
             );
         }
 
-        if is_verbose() {
-            eprintln!(
-                "Collecting signInvite responses for session {} from {} participants...",
-                session_id.ur_string(),
-                start_state.participants.len()
-            );
-        }
-
         let runtime = Runtime::new()?;
         let client = runtime.block_on(async {
             StorageClient::from_selection(selection).await
         })?;
 
-        let mut commitments: BTreeMap<XID, frost::round1::SigningCommitments> =
-            BTreeMap::new();
-        let mut send_to_arids: BTreeMap<XID, ARID> = BTreeMap::new();
-        let mut errors: Vec<(XID, String)> = Vec::new();
+        if self.parallel {
+            // Parallel path with progress display
+            let client = Arc::new(client);
 
-        for (participant, participant_state) in &start_state.participants {
-            let participant_name = registry
-                .participant(participant)
-                .and_then(|r| r.pet_name().map(|s| s.to_owned()))
-                .unwrap_or_else(|| participant.ur_string());
-
-            if is_verbose() {
-                eprintln!("{}...", participant_name);
-            }
-
-            match fetch_commit_response(
-                &runtime,
-                &client,
-                &participant_state.commit_arid,
-                self.timeout,
-                owner.xid_document(),
-                participant,
-                &session_id,
-            ) {
-                Ok((participant_commitments, next_request_arid)) => {
-                    commitments.insert(*participant, participant_commitments);
-                    send_to_arids.insert(*participant, next_request_arid);
-                }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    errors.push((*participant, e.to_string()));
-                }
-            }
-        }
-
-        if !errors.is_empty() {
-            bail!(
-                "Sign commit collection incomplete: {} of {} responses failed",
-                errors.len(),
-                start_state.participants.len()
-            );
-        }
-
-        if commitments.len() != start_state.participants.len() {
-            let missing: Vec<String> = start_state
-                .participants
-                .keys()
-                .filter(|xid| !commitments.contains_key(*xid))
-                .map(|xid| xid.ur_string())
-                .collect();
-            bail!("Missing signInvite responses from: {}", missing.join(", "));
-        }
-
-        // Persist aggregated commitments for this session
-        let signing_dir =
-            signing_state_dir(&registry_path, &group_id, &session_id);
-        fs::create_dir_all(&signing_dir).with_context(|| {
-            format!(
-                "Failed to create signing state directory {}",
-                signing_dir.display()
-            )
-        })?;
-
-        let commitments_path = signing_dir.join("commitments.json");
-        let mut commitments_json = serde_json::Map::new();
-        for (xid, commits) in &commitments {
-            let participant_state = start_state.participants.get(xid).expect(
-                "participant present in start state after earlier validation",
-            );
-
-            let mut entry = serde_json::Map::new();
-            entry.insert(
-                "commitments".to_string(),
-                serde_json::to_value(commits)
-                    .context("Failed to serialize commitments")?,
-            );
-            entry.insert(
-                "share_arid".to_string(),
-                serde_json::Value::String(
-                    participant_state.share_arid.ur_string(),
-                ),
-            );
-
-            commitments_json
-                .insert(xid.ur_string(), serde_json::Value::Object(entry));
-        }
-
-        let mut root = serde_json::Map::new();
-        root.insert(
-            "group".to_string(),
-            serde_json::Value::String(group_id.ur_string()),
-        );
-        root.insert(
-            "session".to_string(),
-            serde_json::Value::String(session_id.ur_string()),
-        );
-        root.insert(
-            "target".to_string(),
-            serde_json::Value::String(start_state.target_ur.clone()),
-        );
-        root.insert(
-            "commitments".to_string(),
-            serde_json::Value::Object(commitments_json),
-        );
-
-        fs::write(&commitments_path, serde_json::to_vec_pretty(&root)?)
-            .with_context(|| {
-                format!("Failed to write {}", commitments_path.display())
+            let collection = runtime.block_on(async {
+                collect_sign_round1_parallel(
+                    Arc::clone(&client),
+                    &registry,
+                    &start_state,
+                    owner.xid_document(),
+                    &session_id,
+                    self.timeout,
+                )
+                .await
             })?;
 
-        // Build and send signRound2 requests
-        let signer_keys = owner
-            .xid_document()
-            .inception_private_keys()
-            .context("Coordinator XID document has no signing keys")?;
-        let valid_until =
-            Date::with_duration_from_now(Duration::from_secs(60 * 60));
+            process_sign_round1_collection(
+                &runtime,
+                client,
+                &registry,
+                &owner,
+                &registry_path,
+                &group_id,
+                &session_id,
+                &start_state,
+                &collection,
+                self.preview_share,
+            )?;
+        } else {
+            // Sequential path (original behavior)
+            if is_verbose() {
+                eprintln!(
+                    "Collecting signInvite responses for session {} from {} participants...",
+                    session_id.ur_string(),
+                    start_state.participants.len()
+                );
+            }
 
-        if is_verbose() {
-            eprintln!(
-                "Dispatching signRound2 requests to {} participants...",
-                send_to_arids.len()
-            );
-        }
+            let mut commitments: BTreeMap<XID, frost::round1::SigningCommitments> =
+                BTreeMap::new();
+            let mut send_to_arids: BTreeMap<XID, ARID> = BTreeMap::new();
+            let mut errors: Vec<(XID, String)> = Vec::new();
 
-        let mut preview_printed = false;
-        for (participant, send_to_arid) in &send_to_arids {
-            let participant_state =
-                start_state.participants.get(participant).expect(
+            for (participant, participant_state) in &start_state.participants {
+                let participant_name = registry
+                    .participant(participant)
+                    .and_then(|r| r.pet_name().map(|s| s.to_owned()))
+                    .unwrap_or_else(|| participant.ur_string());
+
+                if is_verbose() {
+                    eprintln!("{}...", participant_name);
+                }
+
+                match fetch_commit_response(
+                    &runtime,
+                    &client,
+                    &participant_state.commit_arid,
+                    self.timeout,
+                    owner.xid_document(),
+                    participant,
+                    &session_id,
+                ) {
+                    Ok((participant_commitments, next_request_arid)) => {
+                        commitments.insert(*participant, participant_commitments);
+                        send_to_arids.insert(*participant, next_request_arid);
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        errors.push((*participant, e.to_string()));
+                    }
+                }
+            }
+
+            if !errors.is_empty() {
+                bail!(
+                    "Sign commit collection incomplete: {} of {} responses failed",
+                    errors.len(),
+                    start_state.participants.len()
+                );
+            }
+
+            if commitments.len() != start_state.participants.len() {
+                let missing: Vec<String> = start_state
+                    .participants
+                    .keys()
+                    .filter(|xid| !commitments.contains_key(*xid))
+                    .map(|xid| xid.ur_string())
+                    .collect();
+                bail!("Missing signInvite responses from: {}", missing.join(", "));
+            }
+
+            // Persist aggregated commitments for this session
+            let signing_dir =
+                signing_state_dir(&registry_path, &group_id, &session_id);
+            fs::create_dir_all(&signing_dir).with_context(|| {
+                format!(
+                    "Failed to create signing state directory {}",
+                    signing_dir.display()
+                )
+            })?;
+
+            let commitments_path = signing_dir.join("commitments.json");
+            let mut commitments_json = serde_json::Map::new();
+            for (xid, commits) in &commitments {
+                let participant_state = start_state.participants.get(xid).expect(
                     "participant present in start state after earlier validation",
                 );
 
-            let recipient_doc = if *participant == owner.xid() {
-                owner.xid_document().clone()
-            } else {
-                registry
-                    .participant(participant)
-                    .map(|r| r.xid_document().clone())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Participant {} not found in registry",
-                            participant.ur_string()
-                        )
-                    })?
-            };
+                let mut entry = serde_json::Map::new();
+                entry.insert(
+                    "commitments".to_string(),
+                    serde_json::to_value(commits)
+                        .context("Failed to serialize commitments")?,
+                );
+                entry.insert(
+                    "share_arid".to_string(),
+                    serde_json::Value::String(
+                        participant_state.share_arid.ur_string(),
+                    ),
+                );
+
+                commitments_json
+                    .insert(xid.ur_string(), serde_json::Value::Object(entry));
+            }
+
+            let mut root = serde_json::Map::new();
+            root.insert(
+                "group".to_string(),
+                serde_json::Value::String(group_id.ur_string()),
+            );
+            root.insert(
+                "session".to_string(),
+                serde_json::Value::String(session_id.ur_string()),
+            );
+            root.insert(
+                "target".to_string(),
+                serde_json::Value::String(start_state.target_ur.clone()),
+            );
+            root.insert(
+                "commitments".to_string(),
+                serde_json::Value::Object(commitments_json),
+            );
+
+            fs::write(&commitments_path, serde_json::to_vec_pretty(&root)?)
+                .with_context(|| {
+                    format!("Failed to write {}", commitments_path.display())
+                })?;
+
+            // Build and send signRound2 requests
+            let signer_keys = owner
+                .xid_document()
+                .inception_private_keys()
+                .context("Coordinator XID document has no signing keys")?;
+            let valid_until =
+                Date::with_duration_from_now(Duration::from_secs(60 * 60));
+
+            if is_verbose() {
+                eprintln!(
+                    "Dispatching signRound2 requests to {} participants...",
+                    send_to_arids.len()
+                );
+            }
+
+            let mut preview_printed = false;
+            for (participant, send_to_arid) in &send_to_arids {
+                let participant_state =
+                    start_state.participants.get(participant).expect(
+                        "participant present in start state after earlier validation",
+                    );
+
+                let recipient_doc = if *participant == owner.xid() {
+                    owner.xid_document().clone()
+                } else {
+                    registry
+                        .participant(participant)
+                        .map(|r| r.xid_document().clone())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Participant {} not found in registry",
+                                participant.ur_string()
+                            )
+                        })?
+                };
 
             let request = build_sign_share_request(
                 owner.xid_document(),
@@ -281,24 +317,25 @@ impl CommandArgs {
             runtime.block_on(async {
                 client.put(send_to_arid, &sealed_envelope).await
             })?;
-        }
+            }
 
-        let display_path = std::env::current_dir()
-            .ok()
-            .and_then(|cwd| commitments_path.strip_prefix(&cwd).ok())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| commitments_path.clone());
+            let display_path = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| commitments_path.strip_prefix(&cwd).ok())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| commitments_path.clone());
 
-        if is_verbose() {
-            eprintln!();
-            eprintln!(
-                "Collected {} signInvite responses. Saved to {}",
-                commitments.len(),
-                display_path.display()
-            );
-            eprintln!("Dispatched {} signRound2 requests.", commitments.len());
-        } else {
-            println!("{}", display_path.display());
+            if is_verbose() {
+                eprintln!();
+                eprintln!(
+                    "Collected {} signInvite responses. Saved to {}",
+                    commitments.len(),
+                    display_path.display()
+                );
+                eprintln!("Dispatched {} signRound2 requests.", commitments.len());
+            } else {
+                println!("{}", display_path.display());
+            }
         }
 
         Ok(())
@@ -537,4 +574,341 @@ struct StartState {
     group_id: ARID,
     target_ur: String,
     participants: HashMap<XID, StartParticipant>,
+}
+
+// -----------------------------------------------------------------------------
+// Parallel implementations
+// -----------------------------------------------------------------------------
+
+/// Data extracted from a successful sign round1 response.
+struct SignRound1ResponseData {
+    commitments: frost::round1::SigningCommitments,
+    next_request_arid: ARID,
+}
+
+/// Collect sign round1 responses in parallel with progress display.
+async fn collect_sign_round1_parallel(
+    client: Arc<StorageClient>,
+    registry: &Registry,
+    start_state: &StartState,
+    coordinator: &XIDDocument,
+    session_id: &ARID,
+    timeout: Option<u64>,
+) -> Result<CollectionResult<SignRound1ResponseData>> {
+    let requests: Vec<(XID, ARID, String)> = start_state
+        .participants
+        .iter()
+        .map(|(xid, state)| {
+            let name = registry
+                .participant(xid)
+                .and_then(|r| r.pet_name().map(|s| s.to_owned()))
+                .unwrap_or_else(|| xid.ur_string());
+            (*xid, state.commit_arid, name)
+        })
+        .collect();
+
+    let coordinator_keys = coordinator
+        .inception_private_keys()
+        .context("Missing coordinator private keys")?
+        .clone();
+    let session = *session_id;
+
+    let config = ParallelFetchConfig::with_timeout(timeout);
+
+    parallel_fetch(client, requests, config, move |envelope, xid| {
+        validate_and_extract_sign_round1_response(
+            envelope,
+            &coordinator_keys,
+            xid,
+            &session,
+        )
+    })
+    .await
+}
+
+/// Validate envelope and extract sign round1 data (for parallel fetch).
+fn validate_and_extract_sign_round1_response(
+    envelope: &Envelope,
+    coordinator_keys: &bc_components::PrivateKeys,
+    expected_sender: &XID,
+    expected_session_id: &ARID,
+) -> Result<SignRound1ResponseData> {
+    let now = Date::now();
+    let sealed_response = SealedResponse::try_from_encrypted_envelope(
+        envelope,
+        None,
+        Some(now),
+        coordinator_keys,
+    )?;
+
+    if sealed_response.sender().xid() != *expected_sender {
+        bail!(
+            "Unexpected response sender: {} (expected {})",
+            sealed_response.sender().xid().ur_string(),
+            expected_sender.ur_string()
+        );
+    }
+
+    if let Ok(error) = sealed_response.error() {
+        let reason = error
+            .object_for_predicate("reason")
+            .ok()
+            .and_then(|e| e.extract_subject::<String>().ok())
+            .unwrap_or_else(|| "unknown reason".to_string());
+        bail!("Participant rejected signInvite: {}", reason);
+    }
+
+    let result = sealed_response
+        .result()
+        .context("Response has no result envelope")?;
+
+    result
+        .check_subject_unit()?
+        .check_type("signRound1Response")?;
+
+    let response_session: ARID =
+        result.extract_object_for_predicate("session")?;
+    if response_session != *expected_session_id {
+        bail!(
+            "Response session {} does not match expected {}",
+            response_session.ur_string(),
+            expected_session_id.ur_string()
+        );
+    }
+
+    let commitments_json: JSON =
+        result.extract_object_for_predicate("commitments")?;
+    let commitments: frost::round1::SigningCommitments =
+        serde_json::from_slice(commitments_json.as_bytes())
+            .context("Failed to deserialize commitments")?;
+
+    let next_request_arid: ARID =
+        result.extract_object_for_predicate("response_arid")?;
+
+    Ok(SignRound1ResponseData { commitments, next_request_arid })
+}
+
+/// Process sign round1 collection: persist, send round2, print summary.
+#[allow(clippy::too_many_arguments)]
+fn process_sign_round1_collection(
+    runtime: &Runtime,
+    client: Arc<StorageClient>,
+    registry: &Registry,
+    owner: &crate::registry::OwnerRecord,
+    registry_path: &Path,
+    group_id: &ARID,
+    session_id: &ARID,
+    start_state: &StartState,
+    collection: &CollectionResult<SignRound1ResponseData>,
+    preview_share: bool,
+) -> Result<()> {
+    use crate::cmd::parallel::parallel_send;
+
+    // Report any failures
+    if !collection.rejections.is_empty() {
+        eprintln!();
+        eprintln!("Rejections:");
+        for (xid, reason) in &collection.rejections {
+            eprintln!("  {}: {}", xid.ur_string(), reason);
+        }
+    }
+    if !collection.errors.is_empty() {
+        eprintln!();
+        eprintln!("Errors:");
+        for (xid, error) in &collection.errors {
+            eprintln!("  {}: {}", xid.ur_string(), error);
+        }
+    }
+    if !collection.timeouts.is_empty() {
+        eprintln!();
+        eprintln!("Timeouts:");
+        for xid in &collection.timeouts {
+            eprintln!("  {}", xid.ur_string());
+        }
+    }
+
+    if !collection.all_succeeded() {
+        bail!(
+            "Sign commit collection incomplete: {} succeeded, {} rejected, {} errors, {} timeouts",
+            collection.successes.len(),
+            collection.rejections.len(),
+            collection.errors.len(),
+            collection.timeouts.len()
+        );
+    }
+
+    // Build commitments map
+    let commitments: BTreeMap<XID, frost::round1::SigningCommitments> =
+        collection
+            .successes
+            .iter()
+            .map(|(xid, data)| (*xid, data.commitments))
+            .collect();
+
+    // Persist aggregated commitments
+    let signing_dir = signing_state_dir(registry_path, group_id, session_id);
+    fs::create_dir_all(&signing_dir).with_context(|| {
+        format!(
+            "Failed to create signing state directory {}",
+            signing_dir.display()
+        )
+    })?;
+
+    let commitments_path = signing_dir.join("commitments.json");
+    let mut commitments_json = serde_json::Map::new();
+    for (xid, commits) in &commitments {
+        let participant_state = start_state.participants.get(xid).expect(
+            "participant present in start state after earlier validation",
+        );
+
+        let mut entry = serde_json::Map::new();
+        entry.insert(
+            "commitments".to_string(),
+            serde_json::to_value(commits)
+                .context("Failed to serialize commitments")?,
+        );
+        entry.insert(
+            "share_arid".to_string(),
+            serde_json::Value::String(participant_state.share_arid.ur_string()),
+        );
+
+        commitments_json
+            .insert(xid.ur_string(), serde_json::Value::Object(entry));
+    }
+
+    let mut root = serde_json::Map::new();
+    root.insert(
+        "group".to_string(),
+        serde_json::Value::String(group_id.ur_string()),
+    );
+    root.insert(
+        "session".to_string(),
+        serde_json::Value::String(session_id.ur_string()),
+    );
+    root.insert(
+        "target".to_string(),
+        serde_json::Value::String(start_state.target_ur.clone()),
+    );
+    root.insert(
+        "commitments".to_string(),
+        serde_json::Value::Object(commitments_json),
+    );
+
+    fs::write(&commitments_path, serde_json::to_vec_pretty(&root)?)
+        .with_context(|| {
+            format!("Failed to write {}", commitments_path.display())
+        })?;
+
+    // Build and send signRound2 requests in parallel
+    let signer_keys = owner
+        .xid_document()
+        .inception_private_keys()
+        .context("Coordinator XID document has no signing keys")?;
+    let valid_until =
+        Date::with_duration_from_now(Duration::from_secs(60 * 60));
+
+    let mut messages: Vec<(XID, ARID, Envelope, String)> = Vec::new();
+    let mut preview_printed = false;
+
+    for (xid, data) in &collection.successes {
+        let participant_state = start_state.participants.get(xid).expect(
+            "participant present in start state after earlier validation",
+        );
+
+        let participant_name = registry
+            .participant(xid)
+            .and_then(|r| r.pet_name().map(|s| s.to_owned()))
+            .unwrap_or_else(|| xid.ur_string());
+
+        let recipient_doc = if *xid == owner.xid() {
+            owner.xid_document().clone()
+        } else {
+            registry
+                .participant(xid)
+                .map(|r| r.xid_document().clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Participant {} not found in registry",
+                        xid.ur_string()
+                    )
+                })?
+        };
+
+        let request = build_sign_share_request(
+            owner.xid_document(),
+            group_id,
+            session_id,
+            participant_state.share_arid,
+            &commitments,
+        )?;
+
+        if preview_share && !preview_printed {
+            let preview = request.to_envelope(
+                Some(valid_until),
+                Some(signer_keys),
+                None,
+            )?;
+            println!("# signRound2 preview for {}", xid.ur_string());
+            println!("{}", preview.format());
+            preview_printed = true;
+        }
+
+        let sealed_envelope = request.to_envelope_for_recipients(
+            Some(valid_until),
+            Some(signer_keys),
+            &[&recipient_doc],
+        )?;
+
+        messages.push((
+            *xid,
+            data.next_request_arid,
+            sealed_envelope,
+            participant_name,
+        ));
+    }
+
+    let send_results = runtime.block_on(async {
+        parallel_send(client, messages).await
+    });
+
+    // Check for send failures
+    let failures: Vec<_> = send_results
+        .iter()
+        .filter_map(|(xid, result)| {
+            result.as_ref().err().map(|e| (*xid, e.to_string()))
+        })
+        .collect();
+
+    if !failures.is_empty() {
+        for (xid, error) in &failures {
+            eprintln!("Failed to send to {}: {}", xid.ur_string(), error);
+        }
+        bail!(
+            "Failed to send signRound2 requests to {} participants",
+            failures.len()
+        );
+    }
+
+    let display_path = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| commitments_path.strip_prefix(&cwd).ok())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| commitments_path.clone());
+
+    if is_verbose() {
+        eprintln!();
+        eprintln!(
+            "Collected {} signInvite responses. Saved to {}",
+            collection.successes.len(),
+            display_path.display()
+        );
+        eprintln!(
+            "Dispatched {} signRound2 requests.",
+            collection.successes.len()
+        );
+    } else {
+        println!("{}", display_path.display());
+    }
+
+    Ok(())
 }

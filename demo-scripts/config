@@ -1,0 +1,5 @@
+#!/bin/zsh
+
+setopt nobanghist
+STORAGE=hybrid
+TIMEOUT=6000
