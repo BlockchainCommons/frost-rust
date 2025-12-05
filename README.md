@@ -232,14 +232,8 @@ See [Blockchain Commons' Development Phases](https://github.com/BlockchainCommon
 
 ## Version History
 
-### 0.1.0 - December 4, 2025
+### 0.1.0 - December 5, 2025
 - Initial release
-- Registry management with XID Documents
-- Complete DKG workflow (invite, round1, round2, finalize)
-- Threshold signing workflow
-- Multiple storage backends (server, DHT, IPFS, hybrid)
-- Parallel operations with progress display
-- Preview mode for protocol messages
 
 ## Financial Support
 
