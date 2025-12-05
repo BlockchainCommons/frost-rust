@@ -4,9 +4,8 @@ use anyhow::{Context, Result, bail};
 use bc_components::{ARID, JSON, XID, XIDProvider};
 use bc_envelope::prelude::*;
 use clap::Parser;
-use frost_ed25519::{self as frost, Identifier};
+use frost_ed25519::{self as frost, Identifier, rand_core::OsRng};
 use gstp::{SealedResponse, SealedResponseBehavior};
-use rand_core::OsRng;
 use tokio::runtime::Runtime;
 
 use super::receive::decode_invite_details;

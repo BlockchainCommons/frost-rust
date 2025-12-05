@@ -30,11 +30,11 @@ macro_rules! assert_actual_expected {
 
 use std::{fs, path::Path};
 
-use assert_cmd::Command;
+use assert_cmd::{Command, cargo::cargo_bin_cmd};
 
 /// Run the frost binary with the provided args in the given working directory.
 pub fn run_frost(cwd: &Path, args: &[&str]) -> Command {
-    let mut cmd = Command::cargo_bin("frost").unwrap();
+    let mut cmd = cargo_bin_cmd!("frost");
     cmd.current_dir(cwd);
     cmd.args(args);
     cmd

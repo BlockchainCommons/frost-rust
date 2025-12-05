@@ -8,12 +8,11 @@ use anyhow::{Context, Result, bail};
 use bc_components::{ARID, JSON, XID};
 use bc_envelope::prelude::*;
 use clap::Parser;
-use frost_ed25519::{self as frost};
+use frost_ed25519::{self as frost, rand_core::OsRng};
 use gstp::{
     SealedRequest, SealedRequestBehavior, SealedResponse,
     SealedResponseBehavior,
 };
-use rand_core::OsRng;
 use tokio::runtime::Runtime;
 
 use crate::{
